@@ -185,17 +185,23 @@ public class Slob extends AbstractList<Slob.Blob> {
             abstract long read(RandomAccessFile f) throws IOException;
     }
 
-    enum Strength {
-        IDENTICAL,
-        QUATERNARY,
-        TERTIARY,
-        SECONDARY,
-        PRIMARY,
-        IDENTICAL_PREFIX,
-        QUATERNARY_PREFIX,
-        TERTIARY_PREFIX,
-        SECONDARY_PREFIX,
-        PRIMARY_PREFIX
+    static enum Strength {
+        IDENTICAL(false),
+        QUATERNARY(false),
+        TERTIARY(false),
+        SECONDARY(false),
+        PRIMARY(false),
+        IDENTICAL_PREFIX(true),
+        QUATERNARY_PREFIX(true),
+        TERTIARY_PREFIX(true),
+        SECONDARY_PREFIX(true),
+        PRIMARY_PREFIX(true);
+
+        public final boolean prefix;
+
+        private Strength(boolean prefix) {
+            this.prefix = prefix;
+        }
     }
 
     public static class UnknownFileFormat extends RuntimeException {
@@ -822,10 +828,16 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         private void prepareNext() {
             if (!iterators.isEmpty()) {
+                //FIXME This may still blow up with stack overflow
+                // if thousands of dictionaries are open
                 Iterator<Blob> i = iterators.get(0);
                 if (i.hasNext() && currentVolCount <= maxFromOne) {
-                    next = i.next();
-                    if (!seen.contains(next)) {
+                    Blob maybeNext = i.next();
+                    while (seen.contains(maybeNext) && i.hasNext()) {
+                        maybeNext = i.next();
+                    }
+                    if (!seen.contains(maybeNext)) {
+                        next = maybeNext;
                         seen.add(next);
                         currentVolCount++;
                     } else {
@@ -861,14 +873,29 @@ public class Slob extends AbstractList<Slob.Blob> {
         return find(key, 100, slob);
     }
 
-
-    public static Iterator<Blob> find(String key, int maxFromOne, Slob ... slob) {
+    public static Iterator<Blob> find(String key, int maxFromOne, Slob preferred, Slob ... slobs) {
         List<Iterator<Blob>> iterators = new ArrayList<Iterator<Blob>>();
+        if (preferred != null) {
+            for (Strength strength : Strength.values()) {
+                if (!strength.prefix) {
+                    iterators.add(preferred.find(key, strength));
+                }
+            }
+        }
+
         for (Strength strength : Strength.values()) {
-            for (Slob s : slob) {
+            for (Slob s : slobs) {
+                if (preferred != null && s.equals(preferred) && !strength.prefix) {
+                    continue;
+                }
                 iterators.add(s.find(key, strength));
             }
         }
+
         return new MatchIterator(iterators, maxFromOne);
+    }
+
+    public static Iterator<Blob> find(String key, int maxFromOne, Slob ... slobs) {
+        return find(key, maxFromOne, null, slobs);
     }
 }
