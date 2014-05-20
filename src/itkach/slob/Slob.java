@@ -25,8 +25,6 @@ import java.util.UUID;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
 
-import javax.swing.plaf.basic.BasicInternalFrameTitlePane.MaximizeAction;
-
 import org.tukaani.xz.LZMA2Options;
 
 import com.ibm.icu.text.Collator;
