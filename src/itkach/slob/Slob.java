@@ -574,7 +574,10 @@ public class Slob extends AbstractList<Slob.Blob> {
     RefList refList;
     Store store;
 
+    public final File file;
+
     public Slob(File file) throws IOException {
+        this.file = file;
         this.f = new RandomAccessFile(file, "r");
         this.header = this.readHeader();
         this.refList = new RefList(this.f, this.header.encoding, this.header.refsOffset);
