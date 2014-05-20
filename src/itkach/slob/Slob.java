@@ -870,11 +870,11 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    public static Iterator<Blob> find(String key, Slob ... slob) {
-        return find(key, 100, slob);
+    public static Iterator<Blob> find(String key, List<Slob> slobs) {
+        return find(key, 100, slobs);
     }
 
-    public static Iterator<Blob> find(String key, int maxFromOne, Slob preferred, Slob ... slobs) {
+    public static Iterator<Blob> find(String key, int maxFromOne, Slob preferred, List<Slob> slobs) {
         List<Iterator<Blob>> iterators = new ArrayList<Iterator<Blob>>();
         if (preferred != null) {
             for (Strength strength : Strength.values()) {
@@ -896,7 +896,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         return new MatchIterator(iterators, maxFromOne);
     }
 
-    public static Iterator<Blob> find(String key, int maxFromOne, Slob ... slobs) {
+    public static Iterator<Blob> find(String key, int maxFromOne, List<Slob> slobs) {
         return find(key, maxFromOne, null, slobs);
     }
 }
