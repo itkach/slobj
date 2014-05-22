@@ -381,8 +381,6 @@ public class Slob extends AbstractList<Slob.Blob> {
             this.posOffset = file.getFilePointer();
             this.posSize = offsetSize;
             this.dataOffset = this.posOffset + this.posSize.byteSize*this.count;
-//            Collator collator = Collator.getInstance(Locale.ROOT);
-//            collator.getCollationKey(source);
         }
 
         protected long readPointer(long i) throws IOException {
@@ -840,7 +838,7 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         Blob                 next;
         int                  currentVolCount = 0;
-        Set<Blob>            seen            = new HashSet<Blob>();
+        Set<String>            seen            = new HashSet<String>();
         List<Iterator<Blob>> iterators;
         int                  maxFromOne;
 
@@ -850,6 +848,10 @@ public class Slob extends AbstractList<Slob.Blob> {
             prepareNext();
         }
 
+        private String mkDedupKey(Blob b) {
+            return String.format("%s:%s#%s", b.owner.getId(), b.id, b.fragment);
+        }
+
         private void prepareNext() {
             if (!iterators.isEmpty()) {
                 //FIXME This may still blow up with stack overflow
@@ -857,12 +859,14 @@ public class Slob extends AbstractList<Slob.Blob> {
                 Iterator<Blob> i = iterators.get(0);
                 if (i.hasNext() && currentVolCount <= maxFromOne) {
                     Blob maybeNext = i.next();
-                    while (seen.contains(maybeNext) && i.hasNext()) {
+                    String dedupKey = mkDedupKey(maybeNext);
+                    while (seen.contains(dedupKey) && i.hasNext()) {
                         maybeNext = i.next();
+                        dedupKey = mkDedupKey(maybeNext);
                     }
-                    if (!seen.contains(maybeNext)) {
+                    if (!seen.contains(dedupKey)) {
                         next = maybeNext;
-                        seen.add(next);
+                        seen.add(dedupKey);
                         currentVolCount++;
                     } else {
                         next = null;
