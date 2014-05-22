@@ -27,6 +27,7 @@ import java.util.zip.Inflater;
 
 import org.tukaani.xz.LZMA2Options;
 
+import com.ibm.icu.text.CollationKey;
 import com.ibm.icu.text.Collator;
 import com.ibm.icu.text.RuleBasedCollator;
 
@@ -792,9 +793,31 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         @Override
         public int compare(Keyed o1, Keyed o2) {
-            String k2 = o2.key;
-            String k1 = k2.length() < o1.key.length() ? o1.key.substring(0, k2.length()) : o1.key;
-            return collator.compare(k1, k2);
+
+            CollationKey ck1 = collator.getCollationKey(o1.key);
+            CollationKey ck2 = collator.getCollationKey(o2.key);
+
+            byte key1[] = ck1.toByteArray();
+            byte key2[] = ck2.toByteArray();
+
+            int len = Math.min(key1.length, key2.length);
+            int key, targetKey;
+            int i = 0;
+            while (i < len) {
+                key = key1[i] & 0xFF;
+                targetKey = key2[i] & 0xFF;
+                if (key == 0 || targetKey == 0) {
+                    break;
+                }
+                if (key < targetKey) {
+                    return -1;
+                }
+                if (key > targetKey) {
+                    return 1;
+                }
+                i++;
+            }
+            return 0;
         }
     }
 
