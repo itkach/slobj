@@ -791,9 +791,12 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         @Override
         public int compare(Keyed o1, Keyed o2) {
-
-            CollationKey ck1 = collator.getCollationKey(o1.key);
-            CollationKey ck2 = collator.getCollationKey(o2.key);
+            CollationKey ck1;
+            CollationKey ck2;
+            synchronized (collator) {
+                ck1 = collator.getCollationKey(o1.key);
+                ck2 = collator.getCollationKey(o2.key);
+            }
 
             byte key1[] = ck1.toByteArray();
             byte key2[] = ck2.toByteArray();
