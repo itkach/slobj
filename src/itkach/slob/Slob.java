@@ -184,7 +184,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             abstract long read(RandomAccessFile f) throws IOException;
     }
 
-    static enum Strength {
+    public static enum Strength {
         IDENTICAL(false),
         QUATERNARY(false),
         TERTIARY(false),
@@ -715,7 +715,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    Iterator<Blob> find(final String key, Strength strength) {
+    public Iterator<Blob> find(final String key, Strength strength) {
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
         final int initialIndex = binarySearch(this, new Keyed(key), comparator);
