@@ -1,5 +1,7 @@
 package itkach.slob;
 
+import itkach.slob.Slob.ContentReader;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
@@ -17,6 +19,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -365,6 +368,21 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
+    static class LruCache<A, B> extends LinkedHashMap<A, B> {
+        private final int maxEntries;
+
+        public LruCache(final int maxEntries) {
+            super(maxEntries + 1, 1.0f, true);
+            this.maxEntries = maxEntries;
+        }
+
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<A, B> eldest) {
+            return super.size() > maxEntries;
+        }
+    }
+
+
     static abstract class ItemList<T> extends AbstractList<T> {
 
         public final long count;
@@ -373,14 +391,24 @@ public class Slob extends AbstractList<Slob.Blob> {
         protected final long posOffset;
         protected final long dataOffset;
         protected final SizeType posSize;
+        private final Map<Integer, T> cache;
+        private int hits;
+        private int misses;
 
         public ItemList(RandomAccessFile file, long offset, SizeType countSize, SizeType offsetSize) throws IOException {
+            this(file, offset, countSize, offsetSize, 32);
+        }
+
+        public ItemList(RandomAccessFile file, long offset, SizeType countSize, SizeType offsetSize, int cacheSize) throws IOException {
             file.seek(offset);
             this.file = file;
             this.count = countSize.read(file);
             this.posOffset = file.getFilePointer();
             this.posSize = offsetSize;
             this.dataOffset = this.posOffset + this.posSize.byteSize*this.count;
+            this.cache = new LruCache<Integer, T>(cacheSize);
+            this.hits = 0;
+            this.misses = 0;
         }
 
         protected long readPointer(long i) throws IOException {
@@ -401,9 +429,20 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
 
         synchronized public T get(int i) {
-
+            T item = cache.get(i);
+            System.out.println("Cache size " + cache.size());
+            System.out.println("Cache ratio " + hits/(float)misses);
+            if (item != null) {
+                System.out.println("Cache hit! " + item.getClass().getName());
+                this.hits++;
+                return item;
+            }
             try {
-                return this.read(this.readPointer(i));
+                item = this.read(this.readPointer(i));
+                System.out.println("Cache miss " + item.getClass().getName());
+                cache.put(i, item);
+                this.misses++;
+                return item;
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -415,7 +454,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         final String encoding;
 
         public RefList(RandomAccessFile file, String encoding, long offset) throws IOException {
-            super(file, offset, SizeType.UINT, SizeType.ULONG);
+            super(file, offset, SizeType.UINT, SizeType.ULONG, 128);
             this.encoding = encoding;
         }
 
@@ -488,12 +527,14 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         final Compressor compressor;
         final List<String> contentTypes;
+        private Map<String, ContentReader> contentReaderCache;
 
         public Store(RandomAccessFile file, long offset, Compressor compressor,
                 List<String> contentTypes) throws IOException {
             super(file, offset, SizeType.UINT, SizeType.ULONG);
             this.compressor = compressor;
             this.contentTypes = contentTypes;
+            this.contentReaderCache = new LruCache<String, ContentReader>(32);
         }
 
         @Override
@@ -505,8 +546,19 @@ public class Slob extends AbstractList<Slob.Blob> {
             return new Bin(decompressed);
         }
 
-        ContentReader get(final long binIndex, final int itemIndex) {
-            return new ContentReader() {
+        private String cacheKey(long binIndex, int itemIndex) {
+            return new StringBuilder().append(binIndex).append(":").append(itemIndex).toString();
+        }
+
+        synchronized ContentReader get(final long binIndex, final int itemIndex) {
+            String key = cacheKey(binIndex, itemIndex);
+            ContentReader reader = this.contentReaderCache.get(key);
+            if (reader != null) {
+                System.out.println("ContentReader Cache hit! ");
+                return reader;
+            }
+            System.out.println("ContentReader Cache miss :(");
+            reader = new ContentReader() {
 
                 BinItem binItem;
 
@@ -527,6 +579,8 @@ public class Slob extends AbstractList<Slob.Blob> {
                     return contentTypes.get(getBinItem().contentTypeId);
                 }
             };
+            this.contentReaderCache.put(key, reader);
+            return reader;
         }
     }
 
