@@ -1,7 +1,5 @@
 package itkach.slob;
 
-import itkach.slob.Slob.ContentReader;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
@@ -430,16 +428,12 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         synchronized public T get(int i) {
             T item = cache.get(i);
-            System.out.println("Cache size " + cache.size());
-            System.out.println("Cache ratio " + hits/(float)misses);
             if (item != null) {
-                System.out.println("Cache hit! " + item.getClass().getName());
                 this.hits++;
                 return item;
             }
             try {
                 item = this.read(this.readPointer(i));
-                System.out.println("Cache miss " + item.getClass().getName());
                 cache.put(i, item);
                 this.misses++;
                 return item;
@@ -554,10 +548,8 @@ public class Slob extends AbstractList<Slob.Blob> {
             String key = cacheKey(binIndex, itemIndex);
             ContentReader reader = this.contentReaderCache.get(key);
             if (reader != null) {
-                System.out.println("ContentReader Cache hit! ");
                 return reader;
             }
-            System.out.println("ContentReader Cache miss :(");
             reader = new ContentReader() {
 
                 BinItem binItem;
@@ -735,7 +727,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         return getId().hashCode();
     }
 
-    static class Keyed {
+    public static class Keyed {
 
         @Override
         public int hashCode() {
@@ -817,7 +809,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         this.g.close();
     }
 
-    static class KeyComparator implements Comparator<Keyed>{
+    public static class KeyComparator implements Comparator<Keyed>{
 
         RuleBasedCollator collator;
 
@@ -833,7 +825,17 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         @Override
         public int compare(Keyed o1, Keyed o2) {
-            return collator.compare(o1.key, o2.key);
+            return this.compare(o1.key, o2.key);
+        }
+
+        public int compare(String k1, String k2) {
+            return collator.compare(k1, k2);
+        }
+
+        public CollationKey getCollationKey(String key) {
+            synchronized (collator) {
+                return collator.getCollationKey(key);
+            }
         }
     }
 
@@ -845,12 +847,8 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         @Override
         public int compare(Keyed o1, Keyed o2) {
-            CollationKey ck1;
-            CollationKey ck2;
-            synchronized (collator) {
-                ck1 = collator.getCollationKey(o1.key);
-                ck2 = collator.getCollationKey(o2.key);
-            }
+            CollationKey ck1 = getCollationKey(o1.key);
+            CollationKey ck2 = getCollationKey(o2.key);
 
             byte key1[] = ck1.toByteArray();
             byte key2[] = ck2.toByteArray();
@@ -876,7 +874,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    static Map<Strength, Comparator<Keyed>> COMPARATORS = new EnumMap<Strength, Comparator<Keyed>>(Strength.class) {
+    public static Map<Strength, KeyComparator> COMPARATORS = new EnumMap<Strength, KeyComparator>(Strength.class) {
         {
             put(Strength.IDENTICAL, new KeyComparator(Collator.IDENTICAL));
             put(Strength.QUATERNARY, new KeyComparator(Collator.QUATERNARY));
