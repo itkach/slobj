@@ -1,0 +1,13 @@
+apply plugin: 'java'
+apply plugin: 'eclipse'
+
+sourceCompatibility = 1.6
+version = '0.1'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'com.ibm.icu:icu4j:53.1', 'org.tukaani:xz:1.5'
+ }
