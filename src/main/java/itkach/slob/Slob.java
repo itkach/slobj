@@ -34,6 +34,8 @@ import com.ibm.icu.text.RuleBasedCollator;
 
 public class Slob extends AbstractList<Slob.Blob> {
 
+    private boolean closed;
+
     static public interface Compressor {
         byte[] decompress(byte[] input) throws IOException;
     }
@@ -807,8 +809,13 @@ public class Slob extends AbstractList<Slob.Blob> {
     public void close() throws IOException {
         this.f.close();
         this.g.close();
+        this.closed = true;
     }
 
+    public boolean isClosed() {
+        return closed;
+    }
+    
     public static class KeyComparator implements Comparator<Keyed>{
 
         RuleBasedCollator collator;
