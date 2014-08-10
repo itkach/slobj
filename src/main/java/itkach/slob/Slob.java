@@ -818,6 +818,7 @@ public class Slob extends AbstractList<Slob.Blob> {
     
     public static class KeyComparator implements Comparator<Keyed>{
 
+        private final LruCache cache;
         RuleBasedCollator collator;
 
         public KeyComparator(int strength) {
@@ -828,6 +829,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             }
             collator.setStrength(strength);
             collator.setAlternateHandlingShifted(true);
+            cache = new LruCache<String, CollationKey>(128);
         }
 
         @Override
@@ -840,8 +842,14 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
 
         public CollationKey getCollationKey(String key) {
+            CollationKey ck = (CollationKey)this.cache.get(key);
+            if (ck != null) {
+                return ck;
+            }
             synchronized (collator) {
-                return collator.getCollationKey(key);
+                ck = collator.getCollationKey(key);
+                this.cache.put(key, ck);
+                return ck;
             }
         }
     }
