@@ -766,7 +766,7 @@ public class Slob extends AbstractList<Slob.Blob> {
     public Iterator<Blob> find(final String key, Strength strength) {
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
-        final int initialIndex = binarySearch(this, new Keyed(key), comparator);
+        final int initialIndex = binarySearch(this, lookupEntry, comparator);
         Iterator<Blob> iterator = new Iterator<Blob>() {
 
             int   index = initialIndex;
