@@ -857,27 +857,31 @@ public class Slob extends AbstractList<Slob.Blob> {
             CollationKey ck1 = getCollationKey(o1.key);
             CollationKey ck2 = getCollationKey(o2.key);
 
-            byte key1[] = ck1.toByteArray();
-            byte key2[] = ck2.toByteArray();
+            byte[] key1 = ck1.toByteArray();
+            byte[] key2 = ck2.toByteArray();
 
-            int len = Math.min(key1.length, key2.length);
-            int key, targetKey;
-            int i = 0;
-            while (i < len) {
+            int key, targetKey, result = 0, i = 0;
+            while (true) {
                 key = key1[i] & 0xFF;
                 targetKey = key2[i] & 0xFF;
-                if (key == 0 || targetKey == 0) {
+                if (targetKey == 0) {
+                    break;
+                }
+                if (key == 0) {
+                    result = -1;
                     break;
                 }
                 if (key < targetKey) {
-                    return -1;
+                    result = -1;
+                    break;
                 }
                 if (key > targetKey) {
-                    return 1;
+                    result = 1;
+                    break;
                 }
                 i++;
             }
-            return 0;
+            return result;
         }
     }
 
