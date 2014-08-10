@@ -854,6 +854,16 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
+    static String format(byte[] bytes) {
+        StringBuilder s = new StringBuilder();
+        for (byte b : bytes) {
+            s.append(Integer.toHexString(b & 0xFF));
+            s.append("-");
+        }
+        s.deleteCharAt(s.length() - 1);
+        return s.toString();
+    }
+
     static class StartsWithKeyComparator extends KeyComparator {
 
         public StartsWithKeyComparator(int strength) {
