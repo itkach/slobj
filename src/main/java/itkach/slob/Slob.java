@@ -265,6 +265,17 @@ public class Slob extends AbstractList<Slob.Blob> {
             int length = this.readUnsignedByte();
             byte[] data = new byte[length];
             this.read(data);
+            if (length == 255) {
+                for (int i = 0; i < length; i++) {
+                    int b = data[i] & 0xFF;
+                    if (b == 0) {
+                        byte[] noNullsData = new byte[i];
+                        System.arraycopy(data, 0, noNullsData, 0, i);
+                        data = noNullsData;
+                        break;
+                    }
+                }
+            }
             return this.mkString(data, encoding);
         }
 
