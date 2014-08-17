@@ -26,6 +26,8 @@ import java.util.UUID;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
 
+import java.math.BigInteger;
+
 import org.tukaani.xz.LZMA2Options;
 
 import com.ibm.icu.text.CollationKey;
@@ -130,19 +132,10 @@ public class Slob extends AbstractList<Slob.Blob> {
         return ((long) (ch1 << 24) + (ch2 << 16) + (ch3 << 8) + (ch4 << 0)) & 0xFFFFFFFFL;
     }
 
-    static long toUnsignedLong(int[] bytes) throws EOFException {
-        assert bytes.length == 8;
-        int ch1 = bytes[0],
-            ch2 = bytes[1],
-            ch3 = bytes[2],
-            ch4 = bytes[3],
-            ch5 = bytes[4],
-            ch6 = bytes[5],
-            ch7 = bytes[6],
-            ch8 = bytes[7];
-        if ((ch1 | ch2 | ch3 | ch4 | ch5 | ch6 | ch7 | ch8) < 0)
-            throw new EOFException();
-        return ((long) (ch1 << 56) + (ch2 << 48) + (ch3 << 40) + (ch4 << 32) + (ch5 << 24) + (ch6 << 16) + (ch7 << 8) + (ch8 << 0)) & 0xFFFFFFFFFFFFFFFFL;
+    static long toUnsignedLong(byte[] bytes) throws EOFException {
+        BigInteger bi = new BigInteger(bytes);
+        long result = bi.longValue();
+        return result;
     }
 
     static <T> int binarySearch(List<? extends T> l, T key, Comparator<? super T> c) {
@@ -228,17 +221,9 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
 
         long readUnsignedLong() throws IOException {
-            int[] data = new int[8];
-            for (int i = 0; i < data.length; i++) {
-                data[i] = this.read();
-            }
+            byte[] data = new byte[8];
+            this.read(data);
             return toUnsignedLong(data);
-        }
-
-        String readUTF8(int length) throws IOException {
-            byte[] s = new byte[length];
-            this.read(s);
-            return mkString(s, "UTF-8");
         }
 
         UUID uuid(byte[] data) {
@@ -446,7 +431,8 @@ public class Slob extends AbstractList<Slob.Blob> {
                 return item;
             }
             try {
-                item = this.read(this.readPointer(i));
+                long pointer = this.readPointer(i);
+                item = this.read(pointer);
                 cache.put(i, item);
                 this.misses++;
                 return item;
