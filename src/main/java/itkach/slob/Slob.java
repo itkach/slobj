@@ -520,44 +520,34 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         final Compressor compressor;
         final List<String> contentTypes;
-        private Map<String, ContentReader> contentReaderCache;
 
         public Store(RandomAccessFile file, long offset, Compressor compressor,
                 List<String> contentTypes) throws IOException {
             super(file, offset, SizeType.UINT, SizeType.ULONG);
             this.compressor = compressor;
             this.contentTypes = contentTypes;
-            this.contentReaderCache = new LruCache<String, ContentReader>(32);
         }
 
         @Override
         synchronized protected Bin readItem() throws IOException {
+            long t0 = System.currentTimeMillis();
             long compressedLength = this.file.readUnsignedInt();
+            System.out.println("Compressed length: " + compressedLength);
             byte[] compressed = new byte[(int)compressedLength];
             this.file.readFully(compressed);
+            System.out.println("read compressed content in " + (System.currentTimeMillis() - t0));
+            t0 = System.currentTimeMillis();
             byte[] decompressed = this.compressor.decompress(compressed);
+            System.out.println("decompressed content in " + (System.currentTimeMillis() - t0));
+            System.out.println("decompressed length: " + decompressed.length);
             return new Bin(decompressed);
         }
 
-        private String cacheKey(long binIndex, int itemIndex) {
-            return new StringBuilder().append(binIndex).append(":").append(itemIndex).toString();
-        }
-
         synchronized ContentReader get(final long binIndex, final int itemIndex) {
-            String key = cacheKey(binIndex, itemIndex);
-            ContentReader reader = this.contentReaderCache.get(key);
-            if (reader != null) {
-                return reader;
-            }
-            reader = new ContentReader() {
+            ContentReader reader = new ContentReader() {
 
-                BinItem binItem;
-
-                BinItem getBinItem() {
-                    if (binItem == null) {
-                        binItem = get((int)binIndex).get(itemIndex);
-                    }
-                    return binItem;
+                private BinItem getBinItem() {
+                    return get((int)binIndex).get(itemIndex);
                 }
 
                 @Override
@@ -570,7 +560,6 @@ public class Slob extends AbstractList<Slob.Blob> {
                     return contentTypes.get(getBinItem().contentTypeId);
                 }
             };
-            this.contentReaderCache.put(key, reader);
             return reader;
         }
     }
