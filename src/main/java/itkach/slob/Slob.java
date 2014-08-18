@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.util.AbstractList;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -426,6 +427,7 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         synchronized public T get(int i) {
             T item = cache.get(i);
+            System.out.println(String.format("Cache %s: size %d h/m: %d/%d", getClass().getName(), cache.size(), this.hits, this.misses));
             if (item != null) {
                 this.hits++;
                 return item;
@@ -482,6 +484,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         public Bin(byte[] binBytes) throws IOException {
             this.binBytes = binBytes;//super(file, 0, SizeType.UINT, SizeType.UINT);
             this.count = (int)toUnsignedInt(binBytes);
+            System.out.println("Bin item count: " + count);
             this.posOffset = 4;
             this.dataOffset = this.posOffset + this.count * 4;
         }
@@ -750,6 +753,7 @@ public class Slob extends AbstractList<Slob.Blob> {
     }
 
     public Iterator<Blob> find(final String key, Strength strength) {
+        long t0 = System.currentTimeMillis();
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
         final int initialIndex = binarySearch(this, lookupEntry, comparator);
@@ -787,7 +791,6 @@ public class Slob extends AbstractList<Slob.Blob> {
                 throw new UnsupportedOperationException();
             }
         };
-
         return iterator;
     }
 
@@ -906,61 +909,67 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     static final class MatchIterator implements Iterator<Blob> {
 
-        Blob                 next;
-        int                  currentVolCount = 0;
-        Set<String>            seen            = new HashSet<String>();
-        List<Iterator<Blob>> iterators;
-        int                  maxFromOne;
+        private Blob                        next;
+        private int                         currentCount = 0;
+        private Set<String>                 seen         = new HashSet<String>();
+        private Iterator<Iterator<Blob>>    iterators;
+        private Iterator<Blob>              current;
+        private int                         maxFromOne;
 
-        MatchIterator(List<Iterator<Blob>> iterators, int maxFromOne) {
+        MatchIterator(Iterator<Iterator<Blob>> iterators, int maxFromOne) {
             this.iterators = iterators;
             this.maxFromOne = maxFromOne;
-            prepareNext();
+            if (this.iterators.hasNext()) {
+                this.current = this.iterators.next();
+            }
         }
 
         private String mkDedupKey(Blob b) {
             return String.format("%s:%s#%s", b.owner.getId(), b.id, b.fragment);
         }
 
-        private void prepareNext() {
-            if (!iterators.isEmpty()) {
-                //FIXME This may still blow up with stack overflow
-                // if thousands of dictionaries are open
-                Iterator<Blob> i = iterators.get(0);
-                if (i.hasNext() && currentVolCount <= maxFromOne) {
-                    Blob maybeNext = i.next();
-                    String dedupKey = mkDedupKey(maybeNext);
-                    while (seen.contains(dedupKey) && i.hasNext()) {
-                        maybeNext = i.next();
-                        dedupKey = mkDedupKey(maybeNext);
-                    }
-                    if (!seen.contains(dedupKey)) {
-                        next = maybeNext;
-                        seen.add(dedupKey);
-                        currentVolCount++;
-                    } else {
-                        next = null;
-                        prepareNext();
-                    }
-                } else {
-                    currentVolCount = 0;
-                    iterators.remove(0);
-                    prepareNext();
-                }
-            } else {
+        public Blob next() {
+            if (next != null) {
+                Blob toReturn = next;
                 next = null;
+                return toReturn;
             }
+            if (current == null) {
+                return null;
+            }
+            while (true) {
+                while (current.hasNext() && currentCount <= maxFromOne) {
+                    Blob maybeNext = current.next();
+                    String dedupKey = mkDedupKey(maybeNext);
+                    if (seen.contains(dedupKey)) {
+                        continue;
+                    }
+                    else {
+                        seen.add(dedupKey);
+                        currentCount++;
+                        next = maybeNext;
+                        return next;
+                    }
+                }
+                if (this.iterators.hasNext()) {
+                    current = this.iterators.next();
+                    currentCount = 0;
+                }
+                else {
+                    current = null;
+                    break;
+                }
+            }
+            return null;
         }
 
         public boolean hasNext() {
+            if (next == null) {
+                next();
+            }
             return next != null;
         }
 
-        public Blob next() {
-            Blob current = next;
-            prepareNext();
-            return current;
-        }
 
         public void remove() {
             throw new UnsupportedOperationException();
@@ -971,12 +980,15 @@ public class Slob extends AbstractList<Slob.Blob> {
         return find(key, 100, slobs);
     }
 
-    public static Iterator<Blob> find(String key, int maxFromOne, Slob preferred, List<Slob> slobs) {
-        List<Iterator<Blob>> iterators = new ArrayList<Iterator<Blob>>();
+    public static Iterator<Blob> find(final String key, int maxFromOne, Slob preferred, List<Slob> slobs) {
+        long t0 = System.currentTimeMillis();
+
+        List<Map.Entry<Slob, Strength>> variants = new ArrayList<Map.Entry<Slob, Strength>>();
+
         if (preferred != null) {
             for (Strength strength : Strength.values()) {
                 if (!strength.prefix) {
-                    iterators.add(preferred.find(key, strength));
+                    variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(preferred, strength));
                 }
             }
         }
@@ -986,11 +998,32 @@ public class Slob extends AbstractList<Slob.Blob> {
                 if (preferred != null && s.equals(preferred) && !strength.prefix) {
                     continue;
                 }
-                iterators.add(s.find(key, strength));
+                variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(s, strength));
             }
         }
 
-        return new MatchIterator(iterators, maxFromOne);
+        final Iterator<Map.Entry<Slob, Strength>>variantsIterator = variants.iterator();
+
+
+        Iterator<Iterator<Blob>> iterators = new Iterator<Iterator<Blob>>() {
+
+            public boolean hasNext() {
+                return variantsIterator.hasNext();
+            }
+
+            public Iterator<Blob> next() {
+                Map.Entry<Slob, Strength> variant = variantsIterator.next();
+                Iterator<Blob> result = variant.getKey().find(key, variant.getValue());
+                return result;
+            }
+
+            public void remove() {
+                throw new UnsupportedOperationException();
+            }
+        };
+        MatchIterator result = new MatchIterator(iterators, maxFromOne);
+        System.out.println("find returned in " + (System.currentTimeMillis() - t0));
+        return result;
     }
 
     public static Iterator<Blob> find(String key, int maxFromOne, List<Slob> slobs) {
