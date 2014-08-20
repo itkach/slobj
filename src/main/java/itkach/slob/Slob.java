@@ -8,6 +8,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
 import java.util.AbstractList;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -294,7 +295,7 @@ public class Slob extends AbstractList<Slob.Blob> {
     }
 
     static public interface ContentReader {
-        byte[] getContent() throws IOException;
+        ByteBuffer getContent() throws IOException;
         String getContentType() throws IOException;
     }
 
@@ -313,7 +314,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             this.owner = owner;
         }
 
-        public byte[] getContent() throws IOException {
+        public ByteBuffer getContent() throws IOException {
             return reader.getContent();
         }
 
@@ -427,7 +428,7 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         synchronized public T get(int i) {
             T item = cache.get(i);
-            System.out.println(String.format("Cache %s: size %d h/m: %d/%d", getClass().getName(), cache.size(), this.hits, this.misses));
+            //System.out.println(String.format("Cache %s: size %d h/m: %d/%d", getClass().getName(), cache.size(), this.hits, this.misses));
             if (item != null) {
                 this.hits++;
                 return item;
@@ -465,9 +466,9 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     static class BinItem {
         final int contentTypeId;
-        final byte[] content;
+        final ByteBuffer content;
 
-        public BinItem(int contentTypeId, byte[] content) {
+        public BinItem(int contentTypeId, ByteBuffer content) {
             this.contentTypeId = contentTypeId;
             this.content = content;
         }
@@ -493,8 +494,8 @@ public class Slob extends AbstractList<Slob.Blob> {
             int contentTypeId = toUnsignedByte(this.binBytes, offset);
             int contentLength = (int)toUnsignedInt(this.binBytes, offset+1);
             final byte[] content = new byte[contentLength];
-            System.arraycopy(this.binBytes, offset + 1 + 4, content, 0, contentLength);
-            return new BinItem(contentTypeId, content);
+            return new BinItem(contentTypeId,
+                    ByteBuffer.wrap(this.binBytes, offset + 1 + 4, contentLength).asReadOnlyBuffer());
         }
 
         protected int readPointer(int i) throws IOException {
@@ -554,8 +555,8 @@ public class Slob extends AbstractList<Slob.Blob> {
                 }
 
                 @Override
-                public byte[] getContent() throws IOException {
-                    return getBinItem().content;
+                synchronized public ByteBuffer getContent() throws IOException {
+                    return getBinItem().content.slice();
                 }
 
                 @Override
@@ -804,7 +805,7 @@ public class Slob extends AbstractList<Slob.Blob> {
     public boolean isClosed() {
         return closed;
     }
-    
+
     public static class KeyComparator implements Comparator<Keyed>{
 
         private final LruCache cache;
