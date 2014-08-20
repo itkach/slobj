@@ -526,7 +526,7 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         public Store(RandomAccessFile file, long offset, Compressor compressor,
                 List<String> contentTypes) throws IOException {
-            super(file, offset, SizeType.UINT, SizeType.ULONG);
+            super(file, offset, SizeType.UINT, SizeType.ULONG, 4);
             this.compressor = compressor;
             this.contentTypes = contentTypes;
         }
