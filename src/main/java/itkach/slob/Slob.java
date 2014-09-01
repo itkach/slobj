@@ -183,21 +183,23 @@ public class Slob extends AbstractList<Slob.Blob> {
     }
 
     public static enum Strength {
-        IDENTICAL(false),
-        QUATERNARY(false),
-        TERTIARY(false),
-        SECONDARY(false),
-        PRIMARY(false),
-        IDENTICAL_PREFIX(true),
-        QUATERNARY_PREFIX(true),
-        TERTIARY_PREFIX(true),
-        SECONDARY_PREFIX(true),
-        PRIMARY_PREFIX(true);
+        IDENTICAL(false, Collator.IDENTICAL),
+        QUATERNARY(false, Collator.QUATERNARY),
+        TERTIARY(false, Collator.TERTIARY),
+        SECONDARY(false, Collator.SECONDARY),
+        PRIMARY(false, Collator.PRIMARY),
+        IDENTICAL_PREFIX(true, Collator.IDENTICAL),
+        QUATERNARY_PREFIX(true, Collator.QUATERNARY),
+        TERTIARY_PREFIX(true, Collator.TERTIARY),
+        SECONDARY_PREFIX(true, Collator.SECONDARY),
+        PRIMARY_PREFIX(true, Collator.PRIMARY);
 
         public final boolean prefix;
+        public final int level;
 
-        private Strength(boolean prefix) {
+        private Strength(boolean prefix, int level) {
             this.prefix = prefix;
+            this.level = level;
         }
     }
 
@@ -981,13 +983,16 @@ public class Slob extends AbstractList<Slob.Blob> {
         return find(key, 100, slobs);
     }
 
-    public static Iterator<Blob> find(final String key, int maxFromOne, Slob preferred, List<Slob> slobs) {
+    public static Iterator<Blob> find(final String key, int maxFromOne, Slob preferred, List<Slob> slobs, int maxStrengthLevel) {
         long t0 = System.currentTimeMillis();
 
         List<Map.Entry<Slob, Strength>> variants = new ArrayList<Map.Entry<Slob, Strength>>();
 
         if (preferred != null) {
             for (Strength strength : Strength.values()) {
+                if (strength.level > maxStrengthLevel) {
+                    continue;
+                }
                 if (!strength.prefix) {
                     variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(preferred, strength));
                 }
@@ -995,6 +1000,9 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
 
         for (Strength strength : Strength.values()) {
+            if (strength.level > maxStrengthLevel) {
+                continue;
+            }
             for (Slob s : slobs) {
                 if (preferred != null && s.equals(preferred) && !strength.prefix) {
                     continue;
@@ -1028,6 +1036,6 @@ public class Slob extends AbstractList<Slob.Blob> {
     }
 
     public static Iterator<Blob> find(String key, int maxFromOne, List<Slob> slobs) {
-        return find(key, maxFromOne, null, slobs);
+        return find(key, maxFromOne, null, slobs, Collator.QUATERNARY);
     }
 }
