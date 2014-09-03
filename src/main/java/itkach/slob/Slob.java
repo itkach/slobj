@@ -609,7 +609,7 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     private RandomAccessFile f;
     private RandomAccessFile g;
-    Header header;
+    public final Header header;
     RefList refList;
     Store store;
 
