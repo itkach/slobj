@@ -301,7 +301,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         String getContentType() throws IOException;
     }
 
-    static final public class Blob extends Keyed {
+    static final public class Blob extends Keyed implements ContentReader {
 
         public final Slob owner;
         public final String id;
@@ -760,6 +760,8 @@ public class Slob extends AbstractList<Slob.Blob> {
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
         final int initialIndex = binarySearch(this, lookupEntry, comparator);
+        System.out.println(String.format("Done binary search for %s (strength %s) in %s",
+                key, strength, System.currentTimeMillis() - t0));
         Iterator<Blob> iterator = new Iterator<Blob>() {
 
             int   index = initialIndex;
@@ -979,11 +981,11 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    public static Iterator<Blob> find(String key, List<Slob> slobs) {
+    public static Iterator<Blob> find(String key, Slob ... slobs) {
         return find(key, 100, slobs);
     }
 
-    public static Iterator<Blob> find(final String key, int maxFromOne, Slob preferred, List<Slob> slobs, int maxStrengthLevel) {
+    public static Iterator<Blob> find(final String key, int maxFromOne, Slob preferred, Slob[] slobs, int maxStrengthLevel) {
         long t0 = System.currentTimeMillis();
 
         List<Map.Entry<Slob, Strength>> variants = new ArrayList<Map.Entry<Slob, Strength>>();
@@ -1035,7 +1037,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         return result;
     }
 
-    public static Iterator<Blob> find(String key, int maxFromOne, List<Slob> slobs) {
+    public static Iterator<Blob> find(String key, int maxFromOne, Slob ... slobs) {
         return find(key, maxFromOne, null, slobs, Collator.QUATERNARY);
     }
 }
