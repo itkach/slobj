@@ -466,17 +466,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    static class BinItem {
-        final int contentTypeId;
-        final ByteBuffer content;
-
-        public BinItem(int contentTypeId, ByteBuffer content) {
-            this.contentTypeId = contentTypeId;
-            this.content = content;
-        }
-    }
-
-    static class Bin extends AbstractList<BinItem> {
+    static class Bin extends AbstractList<ByteBuffer> {
 
         final byte[] binBytes;
 
@@ -484,27 +474,25 @@ public class Slob extends AbstractList<Slob.Blob> {
         private final int posOffset;
         private final int dataOffset;
 
-        public Bin(byte[] binBytes) throws IOException {
-            this.binBytes = binBytes;//super(file, 0, SizeType.UINT, SizeType.UINT);
-            this.count = (int)toUnsignedInt(binBytes);
-            System.out.println("Bin item count: " + count);
-            this.posOffset = 4;
+        public Bin(byte[] binBytes, int count) throws IOException {
+            this.binBytes = binBytes;
+            this.count = count;
+            this.posOffset = 0;
             this.dataOffset = this.posOffset + this.count * 4;
         }
 
-        protected BinItem readItem(int offset) throws IOException {
-            int contentTypeId = toUnsignedByte(this.binBytes, offset);
-            int contentLength = (int)toUnsignedInt(this.binBytes, offset+1);
-            final byte[] content = new byte[contentLength];
-            return new BinItem(contentTypeId,
-                    ByteBuffer.wrap(this.binBytes, offset + 1 + 4, contentLength).asReadOnlyBuffer());
+        protected ByteBuffer readItem(int offset) throws IOException {
+            int contentLength = (int)toUnsignedInt(this.binBytes, offset);
+            return ByteBuffer
+                    .wrap(this.binBytes, offset + 4, contentLength)
+                    .asReadOnlyBuffer();
         }
 
         protected int readPointer(int i) throws IOException {
             return (int)toUnsignedInt(this.binBytes, this.posOffset + 4*i);
         }
 
-        BinItem read(int pointer) throws IOException {
+        ByteBuffer read(int pointer) throws IOException {
             return readItem(this.dataOffset + pointer);
         }
 
@@ -512,7 +500,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             return (int)this.count;
         }
 
-        public BinItem get(int i) {
+        public ByteBuffer get(int i) {
             try {
                 return this.read(this.readPointer(i));
             } catch (IOException e) {
@@ -522,7 +510,18 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     }
 
-    static class Store extends ItemList<Bin> {
+    static class StoreItem {
+
+        final int[] contentTypeIds;
+        final byte[] compressedContent;
+
+        StoreItem(int[] contentTypeIds, byte[] compressedContent) {
+            this.contentTypeIds = contentTypeIds;
+            this.compressedContent = compressedContent;
+        }
+    }
+
+    static class Store extends ItemList<StoreItem> {
 
         final Compressor compressor;
         final List<String> contentTypes;
@@ -535,35 +534,48 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
 
         @Override
-        synchronized protected Bin readItem() throws IOException {
+        synchronized protected StoreItem readItem() throws IOException {
             long t0 = System.currentTimeMillis();
+            long binItemCount = this.file.readUnsignedInt();
+            int[] contentTypeIds = new int[(int)binItemCount];
+            for (int i = 0; i < binItemCount; i++) {
+                contentTypeIds[i] = this.file.readUnsignedByte();
+            }
             long compressedLength = this.file.readUnsignedInt();
             System.out.println("Compressed length: " + compressedLength);
             byte[] compressed = new byte[(int)compressedLength];
             this.file.readFully(compressed);
-            System.out.println("read compressed content in " + (System.currentTimeMillis() - t0));
-            t0 = System.currentTimeMillis();
-            byte[] decompressed = this.compressor.decompress(compressed);
-            System.out.println("decompressed content in " + (System.currentTimeMillis() - t0));
-            System.out.println("decompressed length: " + decompressed.length);
-            return new Bin(decompressed);
+            System.out.println("read compressed content bytes in " + (System.currentTimeMillis() - t0));
+            return new StoreItem(contentTypeIds, compressed);
         }
 
         synchronized ContentReader get(final long binIndex, final int itemIndex) {
             ContentReader reader = new ContentReader() {
 
-                private BinItem getBinItem() {
-                    return get((int)binIndex).get(itemIndex);
+                Bin bin;
+
+                synchronized private ByteBuffer getBinItem() throws IOException {
+                    if (bin == null) {
+                        long t0 = System.currentTimeMillis();
+                        StoreItem storeItem = get((int)binIndex);
+                        byte[] decompressed = compressor.decompress(
+                                storeItem.compressedContent);
+                        System.out.println("decompressed content in " + (System.currentTimeMillis() - t0));
+                        System.out.println("decompressed length: " + decompressed.length);
+                        bin = new Bin(decompressed, storeItem.contentTypeIds.length);
+                    }
+                    return bin.get(itemIndex);
                 }
 
                 @Override
                 synchronized public ByteBuffer getContent() throws IOException {
-                    return getBinItem().content.slice();
+                    return getBinItem().slice();
                 }
 
                 @Override
                 public String getContentType() throws IOException {
-                    return contentTypes.get(getBinItem().contentTypeId);
+                    StoreItem storeItem = get((int)binIndex);
+                    return contentTypes.get(storeItem.contentTypeIds[itemIndex]);
                 }
             };
             return reader;
