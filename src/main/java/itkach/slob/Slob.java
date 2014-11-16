@@ -691,6 +691,15 @@ public class Slob extends AbstractList<Slob.Blob> {
         return header.blobCount;
     }
 
+    public String getURI() {
+        Map<String, String> tags = getTags();
+        String uri = tags.get("uri");
+        if (uri == null) {
+            uri = "slob:" + getId();
+        }
+        return uri;
+    }
+
     public int size() {
         return this.refList.size();
     }
@@ -724,8 +733,8 @@ public class Slob extends AbstractList<Slob.Blob> {
         if (getClass() != obj.getClass())
             return false;
         Slob other = (Slob) obj;
-        if (other.getId().equals(this.getId()))
-            return true;
+        if (!other.getId().equals(this.getId()))
+            return false;
         return true;
     }
 
@@ -998,32 +1007,62 @@ public class Slob extends AbstractList<Slob.Blob> {
         return find(key, 100, slobs);
     }
 
-    public static Iterator<Blob> find(final String key, int maxFromOne, Slob preferred, Slob[] slobs, int maxStrengthLevel) {
+
+    private static int findWeight(Map.Entry<Slob, Strength> e, Slob preferred) {
+        Slob slob = e.getKey();
+        Strength strength = e.getValue();
+        int w = 0;
+        if (preferred != null) {
+            //We want to see all whole word matches from preferred slob first,
+            //case, diacritic and punctuation insensitive
+            //Only slight preference to be given for partial (prefix) matches
+            //Whole word matches from other dictionaries should appear before any partial matches
+            if (slob.equals(preferred)) {
+                w = strength.prefix ? 50 : 1000;
+            }
+            //Slobs with the same URI are almost as good as preferred slob itself
+            //This is useful when content was split into multiple slobs sharing same URI tag
+            else if (slob.getURI().equals(preferred.getURI())) {
+                w = strength.prefix ? 50 : 500;
+            }
+        }
+        /*
+        PRIMARY 0
+        IDENTITY 15
+         */
+        w += strength.level + (strength.prefix ? 0 : 100);
+        return w;
+    }
+
+    public static Iterator<Blob> find(final String key, int maxFromOne, final Slob preferred, Slob[] slobs, int maxStrengthLevel) {
         long t0 = System.currentTimeMillis();
 
         List<Map.Entry<Slob, Strength>> variants = new ArrayList<Map.Entry<Slob, Strength>>();
-
-        if (preferred != null) {
-            for (Strength strength : Strength.values()) {
-                if (strength.level > maxStrengthLevel) {
-                    continue;
-                }
-                if (!strength.prefix) {
-                    variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(preferred, strength));
-                }
-            }
-        }
 
         for (Strength strength : Strength.values()) {
             if (strength.level > maxStrengthLevel) {
                 continue;
             }
             for (Slob s : slobs) {
-                if (preferred != null && s.equals(preferred) && !strength.prefix) {
-                    continue;
-                }
                 variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(s, strength));
             }
+        }
+
+        Collections.sort(variants, new Comparator<Map.Entry<Slob, Strength>>() {
+            @Override
+            public int compare(Map.Entry<Slob, Strength> e1, Map.Entry<Slob, Strength> e2) {
+                int w1 = findWeight(e1, preferred);
+                int w2 = findWeight(e2, preferred);
+                return w2 - w1;
+            }
+        });
+
+        if (preferred != null) {
+            System.out.println("Preferred: " + preferred.getId() + " " + preferred.getURI());
+        }
+        for (Map.Entry<Slob, Strength> variant : variants) {
+            System.out.println(String.format("%d %s %s %s", findWeight(variant, preferred),
+                    variant.getKey().getId(), variant.getKey().getURI(), variant.getValue()));
         }
 
         final Iterator<Map.Entry<Slob, Strength>>variantsIterator = variants.iterator();
