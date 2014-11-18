@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Level;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
 
@@ -36,7 +37,11 @@ import com.ibm.icu.text.CollationKey;
 import com.ibm.icu.text.Collator;
 import com.ibm.icu.text.RuleBasedCollator;
 
+import java.util.logging.Logger;
+
 public class Slob extends AbstractList<Slob.Blob> {
+
+    final static Logger L = Logger.getLogger(Slob.class.getName());
 
     private boolean closed;
 
@@ -431,7 +436,10 @@ public class Slob extends AbstractList<Slob.Blob> {
 
         synchronized public T get(int i) {
             T item = cache.get(i);
-            //System.out.println(String.format("Cache %s: size %d h/m: %d/%d", getClass().getName(), cache.size(), this.hits, this.misses));
+            if (L.isLoggable(Level.FINEST)) {
+                L.finest(String.format("Cache %s: size %d h/m: %d/%d",
+                        getClass().getName(), cache.size(), this.hits, this.misses));
+            }
             if (item != null) {
                 this.hits++;
                 return item;
@@ -543,10 +551,10 @@ public class Slob extends AbstractList<Slob.Blob> {
                 contentTypeIds[i] = this.file.readUnsignedByte();
             }
             long compressedLength = this.file.readUnsignedInt();
-            System.out.println("Compressed length: " + compressedLength);
+            L.fine("Compressed length: " + compressedLength);
             byte[] compressed = new byte[(int)compressedLength];
             this.file.readFully(compressed);
-            System.out.println("read compressed content bytes in " + (System.currentTimeMillis() - t0));
+            L.fine("read compressed content bytes in " + (System.currentTimeMillis() - t0));
             return new StoreItem(contentTypeIds, compressed);
         }
 
@@ -561,8 +569,8 @@ public class Slob extends AbstractList<Slob.Blob> {
                         StoreItem storeItem = get((int)binIndex);
                         byte[] decompressed = compressor.decompress(
                                 storeItem.compressedContent);
-                        System.out.println("decompressed content in " + (System.currentTimeMillis() - t0));
-                        System.out.println("decompressed length: " + decompressed.length);
+                        L.fine("decompressed content in " + (System.currentTimeMillis() - t0));
+                        L.fine("decompressed length: " + decompressed.length);
                         bin = new Bin(decompressed, storeItem.contentTypeIds.length);
                     }
                     return bin.get(itemIndex);
@@ -782,8 +790,10 @@ public class Slob extends AbstractList<Slob.Blob> {
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
         final int initialIndex = binarySearch(this, lookupEntry, comparator);
-        System.out.println(String.format("Done binary search for %s (strength %s) in %s",
-                key, strength, System.currentTimeMillis() - t0));
+        if (L.isLoggable(Level.FINER)) {
+            L.finer(String.format("Done binary search for %s (strength %s) in %s",
+                    key, strength, System.currentTimeMillis() - t0));
+        }
         Iterator<Blob> iterator = new Iterator<Blob>() {
 
             int   index = initialIndex;
@@ -1057,12 +1067,14 @@ public class Slob extends AbstractList<Slob.Blob> {
             }
         });
 
-        if (preferred != null) {
-            System.out.println("Preferred: " + preferred.getId() + " " + preferred.getURI());
-        }
-        for (Map.Entry<Slob, Strength> variant : variants) {
-            System.out.println(String.format("%d %s %s %s", findWeight(variant, preferred),
-                    variant.getKey().getId(), variant.getKey().getURI(), variant.getValue()));
+        if (L.isLoggable(Level.FINER)) {
+            if (preferred != null) {
+                L.finer("Preferred: " + preferred.getId() + " " + preferred.getURI());
+            }
+            for (Map.Entry<Slob, Strength> variant : variants) {
+                L.finer(String.format("%d %s %s %s", findWeight(variant, preferred),
+                        variant.getKey().getId(), variant.getKey().getURI(), variant.getValue()));
+            }
         }
 
         final Iterator<Map.Entry<Slob, Strength>>variantsIterator = variants.iterator();
@@ -1085,7 +1097,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             }
         };
         MatchIterator result = new MatchIterator(iterators, maxFromOne);
-        System.out.println("find returned in " + (System.currentTimeMillis() - t0));
+        L.fine("find returned in " + (System.currentTimeMillis() - t0));
         return result;
     }
 
