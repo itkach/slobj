@@ -210,6 +210,10 @@ public class Slob extends AbstractList<Slob.Blob> {
     }
 
     public static class UnknownFileFormat extends RuntimeException {
+
+        UnknownFileFormat(){
+            super("Unknown file format");
+        }
     }
 
     final static class RandomAccessFile extends java.io.RandomAccessFile {
