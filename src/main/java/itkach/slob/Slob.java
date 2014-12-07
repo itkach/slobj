@@ -209,10 +209,17 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    public static class UnknownFileFormat extends RuntimeException {
+    public static class UnknownFileFormatException extends IOException {
 
-        UnknownFileFormat(){
+        UnknownFileFormatException(){
             super("Unknown file format");
+        }
+    }
+
+    public static class TruncatedFileException extends IOException {
+
+        TruncatedFileException(){
+            super("Truncated file");
         }
     }
 
@@ -644,6 +651,9 @@ public class Slob extends AbstractList<Slob.Blob> {
         this.file = file;
         this.f = new RandomAccessFile(file, "r");
         this.header = this.readHeader();
+        if (this.header.size != this.f.length()) {
+            throw new TruncatedFileException();
+        }
         this.refList = new RefList(this.f, this.header.encoding, this.header.refsOffset);
         this.g = new RandomAccessFile(file, "r");
         this.store = new Store(this.g, this.header.storeOffset,
@@ -655,7 +665,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         byte[] magic = new byte[8];
         this.f.read(magic);
         if (!Arrays.equals(magic, MAGIC)) {
-            throw new UnknownFileFormat();
+            throw new UnknownFileFormatException();
         }
         UUID uuid = f.readUUID();
         String encoding = f.readTinyText("UTF-8");
