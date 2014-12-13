@@ -412,10 +412,6 @@ public class Slob extends AbstractList<Slob.Blob> {
         private int hits;
         private int misses;
 
-        public ItemList(File file, long offset, SizeType countSize, SizeType offsetSize) throws IOException {
-            this(file, offset, countSize, offsetSize, 32);
-        }
-
         public ItemList(File file, long offset, SizeType countSize, SizeType offsetSize, int cacheSize) throws IOException {
             this.file = file;
             RandomAccessFile f = new RandomAccessFile(file, "r");
@@ -429,7 +425,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             }
             this.posSize = offsetSize;
             this.dataOffset = this.posOffset + this.posSize.byteSize*this.count;
-            this.cache = new LruCache<Integer, T>(cacheSize);
+            this.cache = Collections.synchronizedMap(new LruCache<Integer, T>(cacheSize));
             this.hits = 0;
             this.misses = 0;
         }
@@ -454,8 +450,8 @@ public class Slob extends AbstractList<Slob.Blob> {
         public T get(int i) {
             T item = cache.get(i);
             if (L.isLoggable(Level.FINEST)) {
-                L.finest(String.format("Cache %s: size %d h/m: %d/%d",
-                        getClass().getName(), cache.size(), this.hits, this.misses));
+                L.finest(String.format("Cache %s: size %d h/m : %d/%d (%f)",
+                        getClass().getName(), cache.size(), this.hits, this.misses, this.hits * 1.0 / this.misses));
             }
             if (item != null) {
                 this.hits++;
@@ -491,7 +487,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         final String encoding;
 
         public RefList(File file, String encoding, long offset) throws IOException {
-            super(file, offset, SizeType.UINT, SizeType.ULONG, 128);
+            super(file, offset, SizeType.UINT, SizeType.ULONG, 1024);
             this.encoding = encoding;
         }
 
@@ -507,7 +503,7 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     static class Bin extends AbstractList<ByteBuffer> {
 
-        final byte[] binBytes;
+        private final byte[] binBytes;
 
         private final int count;
         private final int posOffset;
@@ -536,7 +532,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
 
         public int size() {
-            return (int)this.count;
+            return this.count;
         }
 
         public ByteBuffer get(int i) {
@@ -829,9 +825,9 @@ public class Slob extends AbstractList<Slob.Blob> {
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
         final int initialIndex = binarySearch(this, lookupEntry, comparator);
-        if (L.isLoggable(Level.FINER)) {
-            L.finer(String.format("Done binary search for %s (strength %s) in %s",
-                    key, strength, System.currentTimeMillis() - t0));
+        if (L.isLoggable(Level.INFO)) {
+            L.info(String.format("%s: done binary search for %s (strength %s) in %s",
+                    getTags().get("label"), key, strength, System.currentTimeMillis() - t0));
         }
         Iterator<Blob> iterator = new Iterator<Blob>() {
 
@@ -882,10 +878,10 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     public static class KeyComparator implements Comparator<Keyed>{
 
-        private final LruCache cache;
-        RuleBasedCollator collator;
+        private Map<String, CollationKey> cache;
+        private RuleBasedCollator collator;
 
-        public KeyComparator(int strength) {
+        public KeyComparator(int strength, Map<String, CollationKey> cache) {
             try {
                 collator = (RuleBasedCollator)Collator.getInstance(Locale.ROOT).clone();
             } catch (CloneNotSupportedException e) {
@@ -893,7 +889,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             }
             collator.setStrength(strength);
             collator.setAlternateHandlingShifted(true);
-            cache = new LruCache<String, CollationKey>(128);
+            this.cache = cache;
         }
 
         @Override
@@ -902,19 +898,20 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
 
         public int compare(String k1, String k2) {
-            return collator.compare(k1, k2);
+            CollationKey ck1 = getCollationKey(k1);
+            CollationKey ck2 = getCollationKey(k2);
+            return ck1.compareTo(ck2);
         }
 
         public CollationKey getCollationKey(String key) {
-            CollationKey ck = (CollationKey)this.cache.get(key);
-            if (ck != null) {
-                return ck;
+            CollationKey ck = cache.get(key);
+            if (ck == null) {
+                synchronized (collator) {
+                    ck = collator.getCollationKey(key);
+                }
+                cache.put(key, ck);
             }
-            synchronized (collator) {
-                ck = collator.getCollationKey(key);
-                this.cache.put(key, ck);
-                return ck;
-            }
+            return ck;
         }
     }
 
@@ -930,8 +927,8 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     static class StartsWithKeyComparator extends KeyComparator {
 
-        public StartsWithKeyComparator(int strength) {
-            super(strength);
+        public StartsWithKeyComparator(int strength, Map<String, CollationKey> cache) {
+            super(strength, cache);
         }
 
         @Override
@@ -967,18 +964,25 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
+    private static Map<String, CollationKey> newCollationKeyCache() {
+        return Collections.synchronizedMap(new LruCache<String, CollationKey>(4096));
+    }
+
     public static Map<Strength, KeyComparator> COMPARATORS = new EnumMap<Strength, KeyComparator>(Strength.class) {
         {
-            put(Strength.IDENTICAL, new KeyComparator(Collator.IDENTICAL));
-            put(Strength.QUATERNARY, new KeyComparator(Collator.QUATERNARY));
-            put(Strength.TERTIARY, new KeyComparator(Collator.TERTIARY));
-            put(Strength.SECONDARY, new KeyComparator(Collator.SECONDARY));
-            put(Strength.PRIMARY, new KeyComparator(Collator.PRIMARY));
-            put(Strength.IDENTICAL_PREFIX, new StartsWithKeyComparator(Collator.IDENTICAL));
-            put(Strength.QUATERNARY_PREFIX, new StartsWithKeyComparator(Collator.QUATERNARY));
-            put(Strength.TERTIARY_PREFIX, new StartsWithKeyComparator(Collator.TERTIARY));
-            put(Strength.SECONDARY_PREFIX, new StartsWithKeyComparator(Collator.SECONDARY));
-            put(Strength.PRIMARY_PREFIX, new StartsWithKeyComparator(Collator.PRIMARY));
+            Map<String, CollationKey> quaternaryCache = newCollationKeyCache();
+            Map<String, CollationKey> tertiaryCache = newCollationKeyCache();
+            Map<String, CollationKey> secondaryCache = newCollationKeyCache();
+            Map<String, CollationKey> primaryCache = newCollationKeyCache();
+
+            put(Strength.QUATERNARY, new KeyComparator(Collator.QUATERNARY, quaternaryCache));
+            put(Strength.TERTIARY, new KeyComparator(Collator.TERTIARY, tertiaryCache));
+            put(Strength.SECONDARY, new KeyComparator(Collator.SECONDARY, secondaryCache));
+            put(Strength.PRIMARY, new KeyComparator(Collator.PRIMARY, primaryCache));
+            put(Strength.QUATERNARY_PREFIX, new StartsWithKeyComparator(Collator.QUATERNARY, quaternaryCache));
+            put(Strength.TERTIARY_PREFIX, new StartsWithKeyComparator(Collator.TERTIARY, tertiaryCache));
+            put(Strength.SECONDARY_PREFIX, new StartsWithKeyComparator(Collator.SECONDARY, secondaryCache));
+            put(Strength.PRIMARY_PREFIX, new StartsWithKeyComparator(Collator.PRIMARY, primaryCache));
         }
     };
 
