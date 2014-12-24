@@ -1,7 +1,6 @@
 apply plugin: 'java'
 apply plugin: 'eclipse'
 
-sourceCompatibility = 1.6
 version = '0.4'
 
 repositories {
@@ -9,5 +8,5 @@ repositories {
 }
 
 dependencies {
-    compile 'com.ibm.icu:icu4j:53.1', 'org.tukaani:xz:1.5'
+    compile 'com.ibm.icu:icu4j:54.1.1', 'org.tukaani:xz:1.5'
  }
