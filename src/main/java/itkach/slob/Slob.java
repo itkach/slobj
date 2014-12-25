@@ -501,6 +501,23 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
+    static class KeyList extends ItemList<Keyed> {
+
+        final String encoding;
+
+        public KeyList(File file, String encoding, long offset) throws IOException {
+            super(file, offset, SizeType.UINT, SizeType.ULONG, 1024);
+            this.encoding = encoding;
+        }
+
+        @Override
+        protected Keyed readItem(RandomAccessFile f) throws IOException {
+            String key = f.readText(encoding);
+            return new Keyed(key);
+        }
+    }
+
+
     static class Bin extends AbstractList<ByteBuffer> {
 
         private final byte[] binBytes;
@@ -657,6 +674,7 @@ public class Slob extends AbstractList<Slob.Blob> {
     private RandomAccessFile f;
     public final Header header;
     RefList refList;
+    KeyList keyList;
     Store store;
 
     public final File file;
@@ -677,6 +695,7 @@ public class Slob extends AbstractList<Slob.Blob> {
             throw ex;
         }
         this.refList = new RefList(file, this.header.encoding, this.header.refsOffset);
+        this.keyList = new KeyList(file, this.header.encoding, this.header.refsOffset);
         this.store = new Store(file, this.header.storeOffset,
                                COMPRESSORS.get(this.header.compression),
                                this.header.contentTypes);
@@ -824,7 +843,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         long t0 = System.currentTimeMillis();
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
-        final int initialIndex = binarySearch(this, lookupEntry, comparator);
+        final int initialIndex = binarySearch(this.keyList, lookupEntry, comparator);
         if (L.isLoggable(Level.FINE)) {
             L.fine(String.format("%s: done binary search for %s (strength %s) in %s",
                     getTags().get("label"), key, strength, System.currentTimeMillis() - t0));
