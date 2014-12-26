@@ -209,14 +209,14 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    public static class UnknownFileFormatException extends IOException {
+    public final static class UnknownFileFormatException extends IOException {
 
         UnknownFileFormatException(){
             super("Unknown file format");
         }
     }
 
-    public static class TruncatedFileException extends IOException {
+    public final static class TruncatedFileException extends IOException {
 
         TruncatedFileException(){
             super("Truncated file");
@@ -225,12 +225,12 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     final static class RandomAccessFile extends java.io.RandomAccessFile {
 
-        RandomAccessFile(File file, String mode) throws FileNotFoundException {
-            super(file, mode);
+        RandomAccessFile(File file) throws FileNotFoundException {
+            this(file, "r");
         }
 
-        RandomAccessFile(String fileName, String mode) throws FileNotFoundException {
-            super(fileName, mode);
+        private RandomAccessFile(File file, String mode) throws FileNotFoundException {
+            super(file, mode);
         }
 
         long readUnsignedInt() throws IOException {
@@ -313,32 +313,40 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    static public interface ContentReader {
-        ByteBuffer getContent() throws IOException;
-        String getContentType() throws IOException;
+//    static public interface ContentReader {
+//        ByteBuffer getContent() throws IOException;
+//        String getContentType() throws IOException;
+//    }
+
+    public final static class Content {
+        public final String     type;
+        public final ByteBuffer data;
+
+        Content(String type, ByteBuffer data) {
+            this.type = type;
+            this.data = data;
+        }
     }
 
-    static final public class Blob extends Keyed implements ContentReader {
+    public final static class Blob extends Keyed {
 
         public final Slob owner;
         public final String id;
         public final String fragment;
-        public final ContentReader reader;
 
-        public Blob(Slob owner, String blobId, String key, String fragment, ContentReader reader) {
+        public Blob(Slob owner, String blobId, String key, String fragment) {
             super(key);
             this.id = blobId;
             this.fragment = fragment;
-            this.reader = reader;
             this.owner = owner;
         }
 
-        public ByteBuffer getContent() throws IOException {
-            return reader.getContent();
+        public Content getContent() {
+            return owner.getContent(this.id);
         }
 
-        public String getContentType() throws IOException {
-            return reader.getContentType();
+        public String getContentType() {
+            return owner.getContentType(this.id);
         }
 
         @Override
@@ -400,11 +408,38 @@ public class Slob extends AbstractList<Slob.Blob> {
     }
 
 
+    final static class ItemListInfo {
+
+        final long      count;
+        final long      posOffset;
+        final long      dataOffset;
+        final SizeType  posSize;
+
+        ItemListInfo(long count, long posOffset, long dataOffset, SizeType posSize) {
+            this.count = count;
+            this.posOffset = posOffset;
+            this.dataOffset = dataOffset;
+            this.posSize = posSize;
+        }
+    }
+
+    static ItemListInfo readItemListInfo(RandomAccessFile f,
+                                         long offset,
+                                         SizeType countSize,
+                                         SizeType offsetSize) throws IOException {
+        f.seek(offset);
+        long count = countSize.read(f);
+        long posOffset = f.getFilePointer();
+        SizeType posSize = offsetSize;
+        long dataOffset = posOffset + posSize.byteSize*count;
+        return new ItemListInfo(count, posOffset, dataOffset, posSize);
+    }
+
     static abstract class ItemList<T> extends AbstractList<T> {
 
         public final long count;
 
-        protected final File file;
+        protected final RandomAccessFile file;
         protected final long posOffset;
         protected final long dataOffset;
         protected final SizeType posSize;
@@ -412,35 +447,28 @@ public class Slob extends AbstractList<Slob.Blob> {
         private int hits;
         private int misses;
 
-        public ItemList(File file, long offset, SizeType countSize, SizeType offsetSize, int cacheSize) throws IOException {
+        public ItemList(RandomAccessFile file, ItemListInfo info, Map<Integer, T> cache) {
             this.file = file;
-            RandomAccessFile f = new RandomAccessFile(file, "r");
-            try {
-                f.seek(offset);
-                this.count = countSize.read(f);
-                this.posOffset = f.getFilePointer();
-            }
-            finally {
-                f.close();
-            }
-            this.posSize = offsetSize;
-            this.dataOffset = this.posOffset + this.posSize.byteSize*this.count;
-            this.cache = Collections.synchronizedMap(new LruCache<Integer, T>(cacheSize));
+            this.count = info.count;
+            this.posOffset = info.posOffset;
+            this.cache = cache;
+            this.posSize = info.posSize;
+            this.dataOffset = info.dataOffset;
             this.hits = 0;
             this.misses = 0;
         }
 
-        private long readPointer(RandomAccessFile f, long i) throws IOException {
+        private long readPointer(long i) throws IOException {
             long pos = this.posOffset + this.posSize.byteSize*i;
-            f.seek(pos);
-            return this.posSize.read(f);
+            this.file.seek(pos);
+            return this.posSize.read(this.file);
         }
 
-        protected abstract T readItem(RandomAccessFile f) throws IOException;
+        protected abstract T readItem() throws IOException;
 
-        private T read(RandomAccessFile f, long pointer) throws IOException {
-            f.seek(this.dataOffset + pointer);
-            return this.readItem(f);
+        private T read(long pointer) throws IOException {
+            this.file.seek(this.dataOffset + pointer);
+            return this.readItem();
         }
 
         public int size() {
@@ -457,68 +485,62 @@ public class Slob extends AbstractList<Slob.Blob> {
                 this.hits++;
                 return item;
             }
-            RandomAccessFile f = null;
             try {
-                f = new RandomAccessFile(file, "r");
-                long pointer = this.readPointer(f, i);
-                item = this.read(f, pointer);
-                cache.put(i, item);
-                this.misses++;
-                return item;
+                long pointer = this.readPointer(i);
+                item = this.read(pointer);
             }
             catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            finally {
-                if (f != null) {
-                    try {
-                        f.close();
-                    }
-                    catch (IOException ex) {
-                        L.warning("Failed to close " + file.getAbsolutePath());
-                    }
-                }
-            }
+            cache.put(i, item);
+            this.misses++;
+            return item;
         }
     }
 
-    static class RefList extends ItemList<Ref> {
+    final static class RefList extends ItemList<Ref> {
 
         final String encoding;
 
-        public RefList(File file, String encoding, long offset) throws IOException {
-            super(file, offset, SizeType.UINT, SizeType.ULONG, 1024);
+        public RefList(RandomAccessFile file,
+                       String encoding,
+                       ItemListInfo info,
+                       Map<Integer, Ref> cache) {
+            super(file,  info, cache);
             this.encoding = encoding;
         }
 
         @Override
-        protected Ref readItem(RandomAccessFile f) throws IOException {
-            String key = f.readText(encoding);
-            long binIndex = f.readUnsignedInt();
-            int itemIndex = f.readUnsignedShort();
-            String fragment = f.readTinyText(encoding);
+        protected Ref readItem() throws IOException {
+            String key = file.readText(encoding);
+            long binIndex = file.readUnsignedInt();
+            int itemIndex = file.readUnsignedShort();
+            String fragment = file.readTinyText(encoding);
             return new Ref(key, binIndex, itemIndex, fragment);
         }
     }
 
-    static class KeyList extends ItemList<Keyed> {
+    final static class KeyList extends ItemList<Keyed> {
 
         final String encoding;
 
-        public KeyList(File file, String encoding, long offset) throws IOException {
-            super(file, offset, SizeType.UINT, SizeType.ULONG, 1024);
+        public KeyList(RandomAccessFile file,
+                       String encoding,
+                       ItemListInfo info,
+                       Map<Integer, Keyed> cache) {
+            super(file,  info, cache);
             this.encoding = encoding;
         }
 
         @Override
-        protected Keyed readItem(RandomAccessFile f) throws IOException {
-            String key = f.readText(encoding);
+        protected Keyed readItem() throws IOException {
+            String key = file.readText(encoding);
             return new Keyed(key);
         }
     }
 
 
-    static class Bin extends AbstractList<ByteBuffer> {
+    final static class Bin extends AbstractList<ByteBuffer> {
 
         private final byte[] binBytes;
 
@@ -526,7 +548,7 @@ public class Slob extends AbstractList<Slob.Blob> {
         private final int posOffset;
         private final int dataOffset;
 
-        public Bin(byte[] binBytes, int count) throws IOException {
+        public Bin(byte[] binBytes, int count) {
             this.binBytes = binBytes;
             this.count = count;
             this.posOffset = 0;
@@ -562,76 +584,82 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     }
 
-    static class StoreItem {
+    final static class StoreItem {
 
-        final int[] contentTypeIds;
-        final byte[] compressedContent;
+        final int[]     contentTypeIds;
+
+        private byte[]  compressedContent;
+        private Bin     bin;
 
         StoreItem(int[] contentTypeIds, byte[] compressedContent) {
             this.contentTypeIds = contentTypeIds;
             this.compressedContent = compressedContent;
         }
+
+        private ByteBuffer getBinItem(int itemIndex, Compressor compressor) throws IOException {
+            if (bin == null) {
+                long t0 = System.currentTimeMillis();
+                byte[] decompressed = compressor.decompress(this.compressedContent);
+                this.compressedContent = null;
+                L.fine("decompressed content in " + (System.currentTimeMillis() - t0));
+                L.fine("decompressed length: " + decompressed.length);
+                bin = new Bin(decompressed, this.contentTypeIds.length);
+            }
+            return bin.get(itemIndex);
+        }
+
     }
 
-    static class Store extends ItemList<StoreItem> {
+    final static class Store extends ItemList<StoreItem> {
 
         final Compressor compressor;
         final List<String> contentTypes;
 
-        public Store(File file, long offset, Compressor compressor,
-                List<String> contentTypes) throws IOException {
-            super(file, offset, SizeType.UINT, SizeType.ULONG, 4);
+        public Store(RandomAccessFile file,
+                     Compressor compressor,
+                     List<String> contentTypes,
+                     ItemListInfo info,
+                     Map<Integer, StoreItem> cache
+                    ) {
+            super(file, info, cache);
             this.compressor = compressor;
             this.contentTypes = contentTypes;
         }
 
         @Override
-        protected StoreItem readItem(RandomAccessFile f) throws IOException {
+        protected StoreItem readItem() throws IOException {
             long t0 = System.currentTimeMillis();
-            long binItemCount = f.readUnsignedInt();
+            long binItemCount = file.readUnsignedInt();
             int[] contentTypeIds = new int[(int)binItemCount];
             for (int i = 0; i < binItemCount; i++) {
-                contentTypeIds[i] = f.readUnsignedByte();
+                contentTypeIds[i] = file.readUnsignedByte();
             }
-            long compressedLength = f.readUnsignedInt();
+            long compressedLength = file.readUnsignedInt();
             L.fine("Compressed length: " + compressedLength);
             byte[] compressed = new byte[(int)compressedLength];
-            f.readFully(compressed);
+            file.readFully(compressed);
             L.fine("read compressed content bytes in " + (System.currentTimeMillis() - t0));
             return new StoreItem(contentTypeIds, compressed);
         }
 
-        ContentReader get(final long binIndex, final int itemIndex) {
-            ContentReader reader = new ContentReader() {
-
-                Bin bin;
-
-                private ByteBuffer getBinItem() throws IOException {
-                    if (bin == null) {
-                        long t0 = System.currentTimeMillis();
-                        StoreItem storeItem = get((int)binIndex);
-                        byte[] decompressed = compressor.decompress(
-                                storeItem.compressedContent);
-                        L.fine("decompressed content in " + (System.currentTimeMillis() - t0));
-                        L.fine("decompressed length: " + decompressed.length);
-                        bin = new Bin(decompressed, storeItem.contentTypeIds.length);
-                    }
-                    return bin.get(itemIndex);
-                }
-
-                @Override
-                public ByteBuffer getContent() throws IOException {
-                    return getBinItem().slice();
-                }
-
-                @Override
-                public String getContentType() throws IOException {
-                    StoreItem storeItem = get((int)binIndex);
-                    return contentTypes.get(storeItem.contentTypeIds[itemIndex]);
-                }
-            };
-            return reader;
+        String getContentType(int binIndex, int itemIndex) {
+            StoreItem storeItem = get(binIndex);
+            return contentTypes.get(storeItem.contentTypeIds[itemIndex]);
         }
+
+        ByteBuffer getContent(int binIndex, int itemIndex) {
+            StoreItem storeItem = get(binIndex);
+            try {
+                return storeItem.getBinItem(itemIndex, compressor);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+    }
+
+    static interface FileOperation<T> {
+        T run(RandomAccessFile f);
     }
 
     public final byte[] MAGIC = new byte[]{0x21, 0x2d, 0x31, 0x53, 0x4c, 0x4f, 0x42, 0x1f};
@@ -673,9 +701,17 @@ public class Slob extends AbstractList<Slob.Blob> {
 
     private RandomAccessFile f;
     public final Header header;
-    RefList refList;
-    KeyList keyList;
-    Store store;
+
+//    RefList refList;
+//    KeyList keyList;
+//    Store store;
+
+    private ItemListInfo refListInfo;
+    private ItemListInfo storeListInfo;
+
+    private Map<Integer, Ref> refCache = Collections.synchronizedMap(new LruCache<Integer, Ref>(256));
+    private Map<Integer, Keyed> keyCache = Collections.synchronizedMap(new LruCache<Integer, Keyed>(256));
+    private Map<Integer, StoreItem> storeCache = Collections.synchronizedMap(new LruCache<Integer, StoreItem>(4));
 
     public final File file;
 
@@ -694,11 +730,9 @@ public class Slob extends AbstractList<Slob.Blob> {
             this.close();
             throw ex;
         }
-        this.refList = new RefList(file, this.header.encoding, this.header.refsOffset);
-        this.keyList = new KeyList(file, this.header.encoding, this.header.refsOffset);
-        this.store = new Store(file, this.header.storeOffset,
-                               COMPRESSORS.get(this.header.compression),
-                               this.header.contentTypes);
+
+        this.refListInfo = readItemListInfo(this.f, this.header.refsOffset, SizeType.UINT, SizeType.ULONG);
+        this.storeListInfo = readItemListInfo(this.f, this.header.storeOffset, SizeType.UINT, SizeType.ULONG);
     }
 
     private Header readHeader() throws IOException {
@@ -763,23 +797,75 @@ public class Slob extends AbstractList<Slob.Blob> {
     }
 
     public int size() {
-        return this.refList.size();
+        return (int)this.refListInfo.count;
     }
 
-    public Blob get(int i) {
-        Ref ref = this.refList.get(i);
-        ContentReader contentReader = this.store.get(ref.binIndex, ref.itemIndex);
-        return new Blob(this,
-                String.format("%s-%s", ref.binIndex, ref.itemIndex),
-                ref.key, ref.fragment, contentReader);
+    private Store newStoreInstance(RandomAccessFile f) {
+        return new Store(
+                f, COMPRESSORS.get(header.compression),
+                header.contentTypes,
+                storeListInfo,
+                storeCache);
     }
 
-    public ContentReader get(String blobId) throws IOException {
+    private RefList newRefListInstance(RandomAccessFile f) {
+        return new RefList(
+                f, header.encoding,
+                refListInfo,
+                refCache);
+    }
+
+    private KeyList newKeyListInstance(RandomAccessFile f) {
+        return new KeyList(
+                f, header.encoding,
+                refListInfo,
+                keyCache);
+    }
+
+
+    public Blob get(final int i) {
+
+        return run(new FileOperation<Blob>() {
+            @Override
+            public Blob run(RandomAccessFile f) {
+                RefList refList = newRefListInstance(f);
+                Ref ref = refList.get(i);
+                Store store = newStoreInstance(f);
+                return new Blob(Slob.this,
+                        String.format("%s-%s", ref.binIndex, ref.itemIndex),
+                        ref.key, ref.fragment);
+            }
+        });
+    }
+
+    public String getContentType(String blobId) {
         String[] parts = blobId.split("-", 2);
-        long binIndex = Long.parseLong(parts[0]);
-        int itemIndex = Integer.parseInt(parts[1]);
-        return this.store.get(binIndex, itemIndex);
-    }
+        final int binIndex = Integer.parseInt(parts[0]);
+        final int itemIndex = Integer.parseInt(parts[1]);
+        return run(new FileOperation<String>() {
+            @Override
+            public String run(RandomAccessFile f) {
+                Store store = newStoreInstance(f);
+                return store.getContentType(binIndex, itemIndex);
+            }
+        });
+    };
+
+
+    public Content getContent(String blobId) {
+        String[] parts = blobId.split("-", 2);
+        final int binIndex = Integer.parseInt(parts[0]);
+        final int itemIndex = Integer.parseInt(parts[1]);
+        return run(new FileOperation<Content>() {
+            @Override
+            public Content run(RandomAccessFile f) {
+                Store store = newStoreInstance(f);
+                ByteBuffer data = store.getContent(binIndex, itemIndex);
+                String type = store.getContentType(binIndex, itemIndex);
+                return new Content(type, data);
+            }
+        });
+    };
 
     @Override
     public String toString() {
@@ -839,18 +925,47 @@ public class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
+    private <T> T run(FileOperation<T> fileOperation) {
+        RandomAccessFile f;
+        try {
+            f = new RandomAccessFile(this.file);
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            return fileOperation.run(f);
+        }
+        finally {
+            try {
+                f.close();
+            } catch (IOException e) {
+                new RuntimeException(e);
+            }
+        }
+    }
+
+    private int indexOf(final Keyed lookupEntry, final Comparator comparator) {
+        return run(new FileOperation<Integer>() {
+            @Override
+            public Integer run(RandomAccessFile f) {
+                KeyList keyList = newKeyListInstance(f);
+                return binarySearch(keyList, lookupEntry, comparator);
+            }
+        });
+    }
+
     public Iterator<Blob> find(final String key, Strength strength) {
-        long t0 = System.currentTimeMillis();
         final Comparator<Keyed> comparator = COMPARATORS.get(strength);
         final Keyed lookupEntry = new Keyed(key);
-        final int initialIndex = binarySearch(this.keyList, lookupEntry, comparator);
+        long t0 = System.currentTimeMillis();
+        final int initialIndex = indexOf(lookupEntry, comparator);
         if (L.isLoggable(Level.FINE)) {
             L.fine(String.format("%s: done binary search for %s (strength %s) in %s",
                     getTags().get("label"), key, strength, System.currentTimeMillis() - t0));
         }
         Iterator<Blob> iterator = new Iterator<Blob>() {
 
-            int   index = initialIndex;
+            int index = initialIndex;
             Blob nextEntry;
 
             {
