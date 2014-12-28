@@ -39,7 +39,7 @@ import com.ibm.icu.text.RuleBasedCollator;
 
 import java.util.logging.Logger;
 
-public class Slob extends AbstractList<Slob.Blob> {
+public final class Slob extends AbstractList<Slob.Blob> {
 
     final static Logger L = Logger.getLogger(Slob.class.getName());
 
