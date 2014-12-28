@@ -313,11 +313,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-//    static public interface ContentReader {
-//        ByteBuffer getContent() throws IOException;
-//        String getContentType() throws IOException;
-//    }
-
     public final static class Content {
         public final String     type;
         public final ByteBuffer data;
@@ -701,10 +696,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
     private RandomAccessFile f;
     public final Header header;
-
-//    RefList refList;
-//    KeyList keyList;
-//    Store store;
 
     private ItemListInfo refListInfo;
     private ItemListInfo storeListInfo;
