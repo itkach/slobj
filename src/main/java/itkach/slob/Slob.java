@@ -439,8 +439,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
         protected final long dataOffset;
         protected final SizeType posSize;
         private final Map<Integer, T> cache;
-        private int hits;
-        private int misses;
 
         public ItemList(RandomAccessFile file, ItemListInfo info, Map<Integer, T> cache) {
             this.file = file;
@@ -449,8 +447,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
             this.cache = cache;
             this.posSize = info.posSize;
             this.dataOffset = info.dataOffset;
-            this.hits = 0;
-            this.misses = 0;
         }
 
         private long readPointer(long i) throws IOException {
@@ -472,12 +468,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
         public T get(int i) {
             T item = cache.get(i);
-            if (L.isLoggable(Level.FINEST)) {
-                L.finest(String.format("Cache %s: size %d h/m : %d/%d (%f)",
-                        getClass().getName(), cache.size(), this.hits, this.misses, this.hits * 1.0 / this.misses));
-            }
             if (item != null) {
-                this.hits++;
                 return item;
             }
             try {
@@ -488,7 +479,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
                 throw new RuntimeException(e);
             }
             cache.put(i, item);
-            this.misses++;
             return item;
         }
     }
