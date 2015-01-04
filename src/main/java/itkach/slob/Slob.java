@@ -325,23 +325,29 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
     public final static class Blob extends Keyed {
 
-        public final Slob owner;
+        public final Slob   owner;
         public final String id;
         public final String fragment;
+
+        private final int binIndex;
+        private final int itemIndex;
 
         public Blob(Slob owner, String blobId, String key, String fragment) {
             super(key);
             this.id = blobId;
             this.fragment = fragment;
             this.owner = owner;
+            int[] parts = owner.splitBlobId(blobId);
+            this.binIndex = parts[0];
+            this.itemIndex = parts[1];
         }
 
         public Content getContent() {
-            return owner.getContent(this.id);
+            return owner.getContent(binIndex, itemIndex);
         }
 
         public String getContentType() {
-            return owner.getContentType(this.id);
+            return owner.getContentType(binIndex, itemIndex);
         }
 
         @Override
@@ -632,7 +638,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
             return contentTypes.get(storeItem.contentTypeIds[itemIndex]);
         }
 
-        ByteBuffer getContent(int binIndex, int itemIndex) {
+        ByteBuffer getContentData(int binIndex, int itemIndex) {
             StoreItem storeItem = get(binIndex);
             try {
                 return storeItem.getBinItem(itemIndex, compressor);
@@ -819,10 +825,17 @@ public final class Slob extends AbstractList<Slob.Blob> {
         });
     }
 
-    public String getContentType(String blobId) {
+    int[] splitBlobId(String blobId) {
         String[] parts = blobId.split("-", 2);
-        final int binIndex = Integer.parseInt(parts[0]);
-        final int itemIndex = Integer.parseInt(parts[1]);
+        return new int[] {Integer.parseInt(parts[0]), Integer.parseInt(parts[1])};
+    }
+
+    public String getContentType(String blobId) {
+        int[] parts = splitBlobId(blobId);
+        return getContentType(parts[0], parts[1]);
+    };
+
+    String getContentType(final int binIndex, final int itemIndex) {
         return run(new FileOperation<String>() {
             @Override
             public String run(RandomAccessFile f) {
@@ -833,20 +846,24 @@ public final class Slob extends AbstractList<Slob.Blob> {
     };
 
 
-    public Content getContent(String blobId) {
-        String[] parts = blobId.split("-", 2);
-        final int binIndex = Integer.parseInt(parts[0]);
-        final int itemIndex = Integer.parseInt(parts[1]);
+    public Content getContent(final String blobId) {
+        int[] parts = splitBlobId(blobId);
+        return getContent(parts[0], parts[1]);
+    };
+
+    Content getContent(final int binIndex, final int itemIndex) {
         return run(new FileOperation<Content>() {
             @Override
             public Content run(RandomAccessFile f) {
                 Store store = newStoreInstance(f);
-                ByteBuffer data = store.getContent(binIndex, itemIndex);
+                ByteBuffer data = store.getContentData(binIndex, itemIndex);
                 String type = store.getContentType(binIndex, itemIndex);
                 return new Content(type, data);
             }
         });
     };
+
+
 
     @Override
     public String toString() {
