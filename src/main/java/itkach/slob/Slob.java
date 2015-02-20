@@ -43,8 +43,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
     final static Logger L = Logger.getLogger(Slob.class.getName());
 
-    private boolean closed;
-
     static public interface Compressor {
         byte[] decompress(byte[] input) throws IOException;
     }
@@ -222,6 +220,13 @@ public final class Slob extends AbstractList<Slob.Blob> {
             super("Truncated file");
         }
     }
+
+    public final class UnexpectedFileException extends IOException {
+        UnexpectedFileException() {
+            super("Unexpected file");
+        }
+    }
+
 
     final static class RandomAccessFile extends java.io.RandomAccessFile {
 
@@ -690,7 +695,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    private RandomAccessFile f;
     public final Header header;
 
     private ItemListInfo refListInfo;
@@ -704,60 +708,70 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
     public Slob(File file) throws IOException {
         this.file = file;
-        //We don't really need it, just hold on to it
-        //to prevent deleting file while slob is open
-        this.f = new RandomAccessFile(file, "r");
+        RandomAccessFile f = new RandomAccessFile(file, "r");
         try {
-            this.header = this.readHeader();
-            if (this.header.size != this.f.length()) {
+            this.header = this.readHeader(f);
+            if (this.header.size != f.length()) {
                 throw new TruncatedFileException();
             }
+            this.refListInfo = readItemListInfo(f, this.header.refsOffset, SizeType.UINT, SizeType.ULONG);
+            this.storeListInfo = readItemListInfo(f, this.header.storeOffset, SizeType.UINT, SizeType.ULONG);
         }
-        catch(IOException ex) {
-            this.close();
-            throw ex;
+        finally {
+            f.close();
         }
-
-        this.refListInfo = readItemListInfo(this.f, this.header.refsOffset, SizeType.UINT, SizeType.ULONG);
-        this.storeListInfo = readItemListInfo(this.f, this.header.storeOffset, SizeType.UINT, SizeType.ULONG);
     }
 
-    private Header readHeader() throws IOException {
+
+    private void checkFile(RandomAccessFile f) throws IOException {
+        f.seek(0);
         byte[] magic = new byte[8];
-        this.f.read(magic);
+        f.read(magic);
+        if (!Arrays.equals(magic, MAGIC)) {
+            throw new UnknownFileFormatException();
+        }
+        UUID uuid = f.readUUID();
+        if (!uuid.equals(this.header.uuid)) {
+            throw new UnexpectedFileException();
+        }
+    }
+
+    private Header readHeader(RandomAccessFile f) throws IOException {
+        byte[] magic = new byte[8];
+        f.read(magic);
         if (!Arrays.equals(magic, MAGIC)) {
             throw new UnknownFileFormatException();
         }
         UUID uuid = f.readUUID();
         String encoding = f.readTinyText("UTF-8");
         String compression = f.readTinyText(encoding);
-        Map<String, String> tags = readTags(encoding);
-        List<String> contentTypes = readContentTypes(encoding);
-        long blobCount = this.f.readUnsignedInt();
-        long storeOffset = this.f.readLong();
-        long size = this.f.readLong();
-        long refsOffset = this.f.getFilePointer();
+        Map<String, String> tags = readTags(f, encoding);
+        List<String> contentTypes = readContentTypes(f, encoding);
+        long blobCount = f.readUnsignedInt();
+        long storeOffset = f.readLong();
+        long size = f.readLong();
+        long refsOffset = f.getFilePointer();
         return new Header(
                 magic, uuid, encoding, compression, tags,
                 contentTypes, blobCount, storeOffset, refsOffset, size);
     }
 
-    private Map<String, String> readTags(String encoding) throws IOException {
+    private Map<String, String> readTags(RandomAccessFile f, String encoding) throws IOException {
         HashMap<String, String> tags = new HashMap<String, String>();
-        int length = this.f.readUnsignedByte();
+        int length = f.readUnsignedByte();
         for (int i = 0; i < length; i++) {
-            String key = this.f.readTinyText(encoding);
-            String value = this.f.readTinyText(encoding);
+            String key = f.readTinyText(encoding);
+            String value = f.readTinyText(encoding);
             tags.put(key, value);
         }
         return Collections.unmodifiableMap(tags);
     }
 
-    private List<String> readContentTypes(String encoding) throws IOException {
+    private List<String> readContentTypes(RandomAccessFile f, String encoding) throws IOException {
         ArrayList<String> contentTypes = new ArrayList<String>();
-        int length = this.f.readUnsignedByte();
+        int length = f.readUnsignedByte();
         for (int i = 0; i < length; i++) {
-            contentTypes.add(this.f.readText(encoding));
+            contentTypes.add(f.readText(encoding));
         }
         return Collections.unmodifiableList(contentTypes);
     }
@@ -817,7 +831,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
             public Blob run(RandomAccessFile f) {
                 RefList refList = newRefListInstance(f);
                 Ref ref = refList.get(i);
-                Store store = newStoreInstance(f);
                 return new Blob(Slob.this,
                         String.format("%s-%s", ref.binIndex, ref.itemIndex),
                         ref.key, ref.fragment);
@@ -927,7 +940,8 @@ public final class Slob extends AbstractList<Slob.Blob> {
         RandomAccessFile f;
         try {
             f = new RandomAccessFile(this.file);
-        } catch (FileNotFoundException e) {
+            checkFile(f);
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
         try {
@@ -998,15 +1012,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
         return iterator;
     }
 
-
-    public void close() throws IOException {
-        this.f.close();
-        this.closed = true;
-    }
-
-    public boolean isClosed() {
-        return closed;
-    }
 
     public static class KeyComparator implements Comparator<Keyed>{
 
@@ -1278,4 +1283,5 @@ public final class Slob extends AbstractList<Slob.Blob> {
     public static Iterator<Blob> find(String key, int maxFromOne, Slob ... slobs) {
         return find(key, maxFromOne, null, slobs, Collator.QUATERNARY);
     }
+
 }
