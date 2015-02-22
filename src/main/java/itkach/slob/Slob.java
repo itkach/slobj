@@ -1123,6 +1123,20 @@ public final class Slob extends AbstractList<Slob.Blob> {
         }
     };
 
+    public final static Iterator<Blob> EMPTY_RESULT = new Iterator<Blob>(){
+
+        @Override
+        public boolean hasNext() {
+            return false;
+        }
+
+        @Override
+        public Blob next() {
+            return null;
+        }
+    };
+
+
     static final class MatchIterator implements Iterator<Blob> {
 
         private Blob                        next;
@@ -1267,7 +1281,18 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
             public Iterator<Blob> next() {
                 Map.Entry<Slob, Strength> variant = variantsIterator.next();
-                Iterator<Blob> result = variant.getKey().find(key, variant.getValue());
+                Slob slob = variant.getKey();
+                Iterator<Blob> result;
+                try {
+                    result = slob.find(key, variant.getValue());
+                }
+                catch (Exception ex) {
+                    L.log(Level.WARNING,
+                          String.format("Lookup in %s from %s failed",
+                                        slob.getId(), slob.file.getAbsoluteFile()), ex);
+                    result = EMPTY_RESULT;
+                }
+
                 return result;
             }
 
