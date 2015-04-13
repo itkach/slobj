@@ -64,7 +64,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
                 InputStream lis = lzma2.getInputStream(is);
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 while (true) {
-                    byte[] buf = new byte[input.length*4];
+                    byte[] buf = new byte[input.length*8];
                     int count = lis.read(buf);
                     if (count < 0) {
                         break;
@@ -87,7 +87,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
                 decompressor.setInput(input);
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 try {
-                    byte[] buf = new byte[input.length*2];
+                    byte[] buf = new byte[input.length*4];
                     while (!decompressor.finished()) {
                         int count;
                         try {
