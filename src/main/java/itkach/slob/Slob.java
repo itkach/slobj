@@ -10,7 +10,6 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.util.AbstractList;
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -186,13 +185,21 @@ public final class Slob extends AbstractList<Slob.Blob> {
             abstract long read(RandomAccessFile f) throws IOException;
     }
 
-    public static enum Strength {
-        IDENTICAL(false, Collator.IDENTICAL),
-        QUATERNARY(false, Collator.QUATERNARY),
-        TERTIARY(false, Collator.TERTIARY),
-        SECONDARY(false, Collator.SECONDARY),
-        PRIMARY(false, Collator.PRIMARY),
-        IDENTICAL_PREFIX(true, Collator.IDENTICAL),
+    private static Map<Integer, Map<String, CollationKey>> collationCaches = new HashMap<Integer, Map<String, CollationKey>>(){
+        {
+            put(Collator.QUATERNARY, newCollationKeyCache());
+            put(Collator.TERTIARY, newCollationKeyCache());
+            put(Collator.SECONDARY, newCollationKeyCache());
+            put(Collator.PRIMARY, newCollationKeyCache());
+        }
+    };
+
+    public enum Strength {
+        IDENTICAL(Collator.IDENTICAL),
+        QUATERNARY(Collator.QUATERNARY),
+        TERTIARY(Collator.TERTIARY),
+        SECONDARY(Collator.SECONDARY),
+        PRIMARY(Collator.PRIMARY),
         QUATERNARY_PREFIX(true, Collator.QUATERNARY),
         TERTIARY_PREFIX(true, Collator.TERTIARY),
         SECONDARY_PREFIX(true, Collator.SECONDARY),
@@ -200,11 +207,24 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
         public final boolean prefix;
         public final int level;
+        public final Comparator<Keyed> comparator;
 
-        private Strength(boolean prefix, int level) {
+        Strength(int level) {
+            this(false, level);
+        }
+
+        Strength(boolean prefix, int level) {
             this.prefix = prefix;
             this.level = level;
+            Map<String, CollationKey> cache = collationCaches.get(level);
+            if (prefix) {
+                comparator = new StartsWithKeyComparator(level, cache);
+            }
+            else {
+                comparator = new KeyComparator(level, cache);
+            }
         }
+
     }
 
     public final static class UnknownFileFormatException extends IOException {
@@ -967,14 +987,18 @@ public final class Slob extends AbstractList<Slob.Blob> {
     }
 
     public Iterator<Blob> find(final String key, Strength strength) {
-        final Comparator<Keyed> comparator = COMPARATORS.get(strength);
+        final Comparator<Keyed> comparator = strength.comparator;
+        //final Comparator<Keyed> stopComparator = strength.prefix ? STOP_COMPARATORS.get(strength) : comparator;
+        //final Comparator<Keyed> stopComparator = comparator;
+
         final Keyed lookupEntry = new Keyed(key);
         long t0 = System.currentTimeMillis();
         final int initialIndex = indexOf(lookupEntry, comparator);
-        if (L.isLoggable(Level.FINE)) {
-            L.fine(String.format("%s: done binary search for %s (strength %s) in %s",
+        if (L.isLoggable(Level.INFO)) {
+            L.info(String.format("%s: done binary search for %s (strength %s) in %s",
                     getTags().get("label"), key, strength, System.currentTimeMillis() - t0));
         }
+        System.out.println("Initial index: " + strength + " -> " + initialIndex);
         Iterator<Blob> iterator = new Iterator<Blob>() {
 
             int index = initialIndex;
@@ -987,7 +1011,9 @@ public final class Slob extends AbstractList<Slob.Blob> {
             private void prepareNext() {
                 if (index < size()) {
                     Blob matchedEntry = get(index);
+                    System.out.println("Matched entry: " + matchedEntry.key);
                     nextEntry = (0 == comparator.compare(matchedEntry, lookupEntry)) ? matchedEntry : null;
+                    System.out.println("Next entry: " + nextEntry);
                     index++;
                 }
                 else {
@@ -1015,17 +1041,21 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
     public static class KeyComparator implements Comparator<Keyed>{
 
-        private Map<String, CollationKey> cache;
-        private RuleBasedCollator collator;
+        protected Map<String, CollationKey> cache;
+        protected RuleBasedCollator collator;
 
         public KeyComparator(int strength, Map<String, CollationKey> cache) {
+            this(strength, cache, true);
+        }
+
+        public KeyComparator(int strength, Map<String, CollationKey> cache, boolean alternateHandlingShifted) {
             try {
                 collator = (RuleBasedCollator)Collator.getInstance(Locale.ROOT).clone();
             } catch (CloneNotSupportedException e) {
                 throw new RuntimeException(e);
             }
             collator.setStrength(strength);
-            collator.setAlternateHandlingShifted(true);
+            collator.setAlternateHandlingShifted(alternateHandlingShifted);
             this.cache = cache;
         }
 
@@ -1101,27 +1131,39 @@ public final class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
+//    static class StartsWithComparator extends KeyComparator {
+//
+//        public StartsWithComparator(int strength, Map<String, CollationKey> cache) {
+//            super(strength, cache);
+//            this.collator.setAlternateHandlingShifted(false);
+//        }
+//
+//        @Override
+//        public int compare(Keyed o1, Keyed o2) {
+//
+//            String k1 = o1.key;
+//            String k2 = o2.key;
+//            int len2 = k2.length();
+//
+//            if (k1.length() > len2) {
+//                k1 = k1.substring(0, len2);
+//            }
+//
+//            System.out.println(String.format("Got k1='%s' k2='%s', comparing '%s' and '%s'",
+//                    o1.key, o2.key, k1, k2
+//                    ));
+//
+//            CollationKey ck1 = getCollationKey(k1);
+//            CollationKey ck2 = getCollationKey(k2);
+//
+//            return ck1.compareTo(ck2);
+//        }
+//    }
+
+
     private static Map<String, CollationKey> newCollationKeyCache() {
         return Collections.synchronizedMap(new LruCache<String, CollationKey>(4096));
     }
-
-    public static Map<Strength, KeyComparator> COMPARATORS = new EnumMap<Strength, KeyComparator>(Strength.class) {
-        {
-            Map<String, CollationKey> quaternaryCache = newCollationKeyCache();
-            Map<String, CollationKey> tertiaryCache = newCollationKeyCache();
-            Map<String, CollationKey> secondaryCache = newCollationKeyCache();
-            Map<String, CollationKey> primaryCache = newCollationKeyCache();
-
-            put(Strength.QUATERNARY, new KeyComparator(Collator.QUATERNARY, quaternaryCache));
-            put(Strength.TERTIARY, new KeyComparator(Collator.TERTIARY, tertiaryCache));
-            put(Strength.SECONDARY, new KeyComparator(Collator.SECONDARY, secondaryCache));
-            put(Strength.PRIMARY, new KeyComparator(Collator.PRIMARY, primaryCache));
-            put(Strength.QUATERNARY_PREFIX, new StartsWithKeyComparator(Collator.QUATERNARY, quaternaryCache));
-            put(Strength.TERTIARY_PREFIX, new StartsWithKeyComparator(Collator.TERTIARY, tertiaryCache));
-            put(Strength.SECONDARY_PREFIX, new StartsWithKeyComparator(Collator.SECONDARY, secondaryCache));
-            put(Strength.PRIMARY_PREFIX, new StartsWithKeyComparator(Collator.PRIMARY, primaryCache));
-        }
-    };
 
     public final static Iterator<Blob> EMPTY_RESULT = new Iterator<Blob>(){
 
@@ -1172,6 +1214,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
                     Blob maybeNext = current.next();
                     String dedupKey = mkDedupKey(maybeNext);
                     if (seen.contains(dedupKey)) {
+                        L.fine("Ignoring dupe " + dedupKey);
                         continue;
                     }
                     else {
@@ -1206,6 +1249,153 @@ public final class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
+    static final class FindResult {
+
+        final Iterator<Blob> iterator;
+        final Strength       strength;
+
+        FindResult(Iterator<Blob> iterator, Strength strength) {
+            this.iterator = iterator;
+            this.strength = strength;
+        }
+    }
+
+    static final class MergeBufferItem {
+
+        final Blob           blob;
+        final Strength       strength;
+
+        MergeBufferItem(Blob blob, Strength strength) {
+            this.blob = blob;
+            this.strength = strength;
+        }
+    }
+
+    static final class MergeBufferItemComparator implements Comparator<MergeBufferItem> {
+
+        @Override
+        public int compare(MergeBufferItem o1, MergeBufferItem o2) {
+            Strength s1 = o1.strength;
+            Strength s2 = o2.strength;
+            if (s1 == s2) {
+                Comparator<Keyed> cmp = s1.comparator;
+                return cmp.compare(o1.blob, o2.blob);
+            }
+            return s1.level < s2.level ? 1 : -1;
+        }
+    }
+
+    static final class MatchIterator2 implements Iterator<Blob> {
+
+        private Set<String>                 seen = new HashSet<String>();
+        private List<MergeBufferItem>       mergeBuffer;
+        private MergeBufferItemComparator   comparator;
+        private Map<Slob, FindResult>       iterators = new HashMap<Slob, FindResult>();
+        private String                      key;
+
+        MatchIterator2(Slob[] slobs, String key) {
+            this.key = key;
+            for (Slob slob : slobs) {
+                iterators.put(slob, nextResult(slob));
+            }
+            comparator = new MergeBufferItemComparator();
+            mergeBuffer = new ArrayList<MergeBufferItem>();
+            for (Slob slob : slobs) {
+                updateMergeBuffer(slob);
+            }
+        }
+
+        Strength nextStrength(Strength s) {
+            switch (s) {
+                case IDENTICAL: return Strength.QUATERNARY;
+                case QUATERNARY: return Strength.TERTIARY;
+                case TERTIARY: return Strength.SECONDARY;
+                case SECONDARY: return Strength.PRIMARY;
+                case PRIMARY: return Strength.QUATERNARY_PREFIX;
+                case QUATERNARY_PREFIX: return Strength.TERTIARY_PREFIX;
+                case TERTIARY_PREFIX: return Strength.SECONDARY_PREFIX;
+                case SECONDARY_PREFIX: return Strength.PRIMARY_PREFIX;
+                default: return null;
+            }
+        }
+
+
+        FindResult nextResult(Slob slob) {
+            Strength strength;
+            if (!iterators.containsKey(slob)) {
+                strength = Strength.QUATERNARY;
+            }
+            else {
+                FindResult currentResult = iterators.get(slob);
+                strength = nextStrength(currentResult.strength);
+            }
+            if (strength == null) {
+                return null;
+            }
+            Iterator<Blob> iter;
+            try {
+                iter = slob.find(this.key, strength);
+            }
+            catch (Exception ex) {
+                L.log(Level.WARNING,
+                        String.format("Lookup in %s from %s failed",
+                                slob.getId(), slob.file.getAbsoluteFile()), ex);
+                iter = EMPTY_RESULT;
+            }
+
+            return new FindResult(iter, strength);
+        }
+
+        void updateMergeBuffer(Slob slob) {
+            long t0 = System.currentTimeMillis();
+            FindResult findResult = iterators.get(slob);
+            if (findResult == null) {
+                return;
+            }
+            Iterator<Blob> iter = findResult.iterator;
+            while (iter.hasNext()) {
+                Blob maybeNext = iter.next();
+                String dedupKey = mkDedupKey(maybeNext);
+                if (seen.contains(dedupKey)) {
+                    L.info("Ignoring dupe " + dedupKey);
+                    continue;
+                } else {
+                    seen.add(dedupKey);
+                    mergeBuffer.add(new MergeBufferItem(maybeNext, findResult.strength));
+                    L.info("Updated merge buffer (found next) in " + (System.currentTimeMillis() - t0));
+                    return;
+                }
+            }
+            if (!iter.hasNext()) {
+                iterators.put(slob, nextResult(slob));
+                updateMergeBuffer(slob);
+            }
+            L.info("Updated merge buffer in " + (System.currentTimeMillis() - t0));
+        }
+
+        private String mkDedupKey(Blob b) {
+            return String.format("%s:%s#%s", b.owner.getId(), b.id, b.fragment);
+        }
+
+        public Blob next() {
+            Collections.sort(mergeBuffer, comparator);
+            MergeBufferItem result = mergeBuffer.remove(0);
+            Blob blob = result.blob;
+            System.out.println("Merge buffer size: " + mergeBuffer.size());
+            updateMergeBuffer(blob.owner);
+            return blob;
+        }
+
+        public boolean hasNext() {
+            return mergeBuffer.size() > 0;
+        }
+
+        public void remove() {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+
     public static Iterator<Blob> find(String key, Slob ... slobs) {
         return find(key, 100, slobs);
     }
@@ -1216,6 +1406,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
         Strength strength = e.getValue();
         int w = 0;
         if (preferred != null) {
+            System.out.println("preferred: " + preferred.getURI());
             //We want to see all whole word matches from preferred slob first,
             //case, diacritic and punctuation insensitive
             //Only slight preference to be given for partial (prefix) matches
@@ -1234,74 +1425,111 @@ public final class Slob extends AbstractList<Slob.Blob> {
         IDENTITY 15
          */
         w += strength.level + (strength.prefix ? 0 : 100);
+//        if (strength.altPrefix) {
+//            w += 20;
+//        }
         return w;
     }
 
     public static Iterator<Blob> find(final String key, int maxFromOne, final Slob preferred, Slob[] slobs, int maxStrengthLevel) {
         long t0 = System.currentTimeMillis();
 
-        List<Map.Entry<Slob, Strength>> variants = new ArrayList<Map.Entry<Slob, Strength>>();
+//        List<Map.Entry<Slob, Strength>> variants = new ArrayList<Map.Entry<Slob, Strength>>();
+//
+//        for (Strength strength : Strength.values()) {
+//            if (strength.level > maxStrengthLevel) {
+//                continue;
+//            }
+//            if (!(strength == Strength.QUATERNARY)) {
+//                continue;
+//            }
+//            for (Slob s : slobs) {
+//                variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(s, strength));
+//            }
+//        }
 
-        for (Strength strength : Strength.values()) {
-            if (strength.level > maxStrengthLevel) {
-                continue;
-            }
-            for (Slob s : slobs) {
-                variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(s, strength));
-            }
-        }
-
-        Collections.sort(variants, new Comparator<Map.Entry<Slob, Strength>>() {
-            @Override
-            public int compare(Map.Entry<Slob, Strength> e1, Map.Entry<Slob, Strength> e2) {
-                int w1 = findWeight(e1, preferred);
-                int w2 = findWeight(e2, preferred);
-                return w2 - w1;
-            }
-        });
-
-        if (L.isLoggable(Level.FINER)) {
-            if (preferred != null) {
-                L.finer("Preferred: " + preferred.getId() + " " + preferred.getURI());
-            }
-            for (Map.Entry<Slob, Strength> variant : variants) {
-                L.finer(String.format("%d %s %s %s", findWeight(variant, preferred),
-                        variant.getKey().getId(), variant.getKey().getURI(), variant.getValue()));
-            }
-        }
-
-        final Iterator<Map.Entry<Slob, Strength>>variantsIterator = variants.iterator();
+//        for (Strength strength : new Strength[]{
+//                Strength.QUATERNARY_PREFIX2,
+//                Strength.QUATERNARY_PREFIX,
+//                Strength.TERTIARY_PREFIX,
+//                Strength.SECONDARY_PREFIX,
+//                Strength.PRIMARY_PREFIX,
+//        }) {
+//            if (strength.level > maxStrengthLevel) {
+//                continue;
+//            }
+//            for (Slob s : slobs) {
+//                variants.add(new AbstractMap.SimpleImmutableEntry<Slob, Strength>(s, strength));
+//            }
+//        }
 
 
-        Iterator<Iterator<Blob>> iterators = new Iterator<Iterator<Blob>>() {
+//        Collections.sort(variants, new Comparator<Map.Entry<Slob, Strength>>() {
+//            @Override
+//            public int compare(Map.Entry<Slob, Strength> e1, Map.Entry<Slob, Strength> e2) {
+//                int w1 = findWeight(e1, preferred);
+//                int w2 = findWeight(e2, preferred);
+//                return w2 - w1;
+//            }
+//        });
 
-            public boolean hasNext() {
-                return variantsIterator.hasNext();
-            }
+//        if (L.isLoggable(Level.FINER)) {
+//            if (preferred != null) {
+//                L.finer("Preferred: " + preferred.getId() + " " + preferred.getURI());
+//            }
+//            for (Map.Entry<Slob, Strength> variant : variants) {
+//                L.finer(String.format("%d %s %s %s", findWeight(variant, preferred),
+//                        variant.getKey().getId(), variant.getKey().getURI(), variant.getValue()));
+//            }
+//        }
+//
+//        final Iterator<Map.Entry<Slob, Strength>>variantsIterator = variants.iterator();
+//
+//
+//        Iterator<Iterator<Blob>> iterators = new Iterator<Iterator<Blob>>() {
+//
+//            public boolean hasNext() {
+//                return variantsIterator.hasNext();
+//            }
+//
+//            public Iterator<Blob> next() {
+//                Map.Entry<Slob, Strength> variant = variantsIterator.next();
+//                Slob slob = variant.getKey();
+//                Iterator<Blob> result;
+//                try {
+//                    result = slob.find(key, variant.getValue());
+//                }
+//                catch (Exception ex) {
+//                    L.log(Level.WARNING,
+//                          String.format("Lookup in %s from %s failed",
+//                                        slob.getId(), slob.file.getAbsoluteFile()), ex);
+//                    result = EMPTY_RESULT;
+//                }
+//
+//                return result;
+//            }
+//
+//            public void remove() {
+//                throw new UnsupportedOperationException();
+//            }
+//        };
 
-            public Iterator<Blob> next() {
-                Map.Entry<Slob, Strength> variant = variantsIterator.next();
-                Slob slob = variant.getKey();
-                Iterator<Blob> result;
-                try {
-                    result = slob.find(key, variant.getValue());
-                }
-                catch (Exception ex) {
-                    L.log(Level.WARNING,
-                          String.format("Lookup in %s from %s failed",
-                                        slob.getId(), slob.file.getAbsoluteFile()), ex);
-                    result = EMPTY_RESULT;
-                }
-
-                return result;
-            }
-
-            public void remove() {
-                throw new UnsupportedOperationException();
-            }
-        };
-        MatchIterator result = new MatchIterator(iterators, maxFromOne);
-        L.fine("find returned in " + (System.currentTimeMillis() - t0));
+//        List<Iterator<Blob>> iterators2 = new ArrayList<Iterator<Blob>>(slobs.length);
+//        for (Slob slob : slobs) {
+//            Iterator<Blob> result;
+//            try {
+//                result = slob.find(key, Strength.IDENTICAL);
+//            }
+//            catch (Exception ex) {
+//                L.log(Level.WARNING,
+//                        String.format("Lookup in %s from %s failed",
+//                                slob.getId(), slob.file.getAbsoluteFile()), ex);
+//                result = EMPTY_RESULT;
+//            }
+//            iterators2.add(result);
+//        }
+        MatchIterator2 result = new MatchIterator2(slobs, key);
+        L.info("find returned in " + (System.currentTimeMillis() - t0));
         return result;
     }
 
