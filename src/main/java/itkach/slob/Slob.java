@@ -1212,7 +1212,11 @@ public final class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    static final class MatchIterator implements Iterator<Blob> {
+    public interface PeekableIterator<E> extends  Iterator<E> {
+        E peek();
+    }
+
+    static final class MatchIterator implements PeekableIterator<Blob> {
 
         private Set<String>                 seen = new HashSet<String>();
         private List<MergeBufferItem>       mergeBuffer;
@@ -1311,6 +1315,16 @@ public final class Slob extends AbstractList<Slob.Blob> {
             return String.format("%s:%s#%s", b.owner.getId(), b.id, b.fragment);
         }
 
+        public Blob peek() {
+            try {
+                Collections.sort(mergeBuffer, comparator);
+            }
+            catch (Exception ex) {
+                L.log(Level.SEVERE, "Sorting merge buffer failed", ex);
+            }
+            return mergeBuffer.get(0).blob;
+        }
+
         public Blob next() {
             try {
                 Collections.sort(mergeBuffer, comparator);
@@ -1320,7 +1334,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
             }
             MergeBufferItem result = mergeBuffer.remove(0);
             Blob blob = result.blob;
-            System.out.println("Merge buffer size: " + mergeBuffer.size());
             updateMergeBuffer(blob.owner);
             return blob;
         }
@@ -1334,18 +1347,18 @@ public final class Slob extends AbstractList<Slob.Blob> {
         }
     }
 
-    public static Iterator<Blob> find(String key, Slob[] slobs, Slob preferred, Strength upToStrength) {
+    public static PeekableIterator<Blob> find(String key, Slob[] slobs, Slob preferred, Strength upToStrength) {
         long t0 = System.currentTimeMillis();
         MatchIterator result = new MatchIterator(slobs, key, preferred, upToStrength);
         L.info("find returned in " + (System.currentTimeMillis() - t0));
         return result;
     }
 
-    public static Iterator<Blob> find(String key, Slob[] slobs, Slob preferred) {
+    public static PeekableIterator<Blob> find(String key, Slob[] slobs, Slob preferred) {
         return find(key, slobs, preferred, null);
     }
 
-    public static Iterator<Blob> find(String key, Slob ... slobs) {
+    public static PeekableIterator<Blob> find(String key, Slob ... slobs) {
         return find(key, slobs, null, null);
     }
 
