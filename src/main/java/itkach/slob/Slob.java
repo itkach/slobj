@@ -207,6 +207,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
         public final boolean        prefix;
         public final int            level;
         public final KeyComparator  comparator;
+        public final KeyComparator  stopComparator;
 
         Strength(int level) {
             this(false, level);
@@ -216,11 +217,12 @@ public final class Slob extends AbstractList<Slob.Blob> {
             this.prefix = prefix;
             this.level = level;
             Map<String, CollationKey> cache = collationCaches.get(level);
+            comparator = new KeyComparator(level, cache);
             if (prefix) {
-                comparator = new StartsWithKeyComparator(level, cache);
+                stopComparator = new StartsWithKeyComparator(level, cache);
             }
             else {
-                comparator = new KeyComparator(level, cache);
+                stopComparator = comparator;
             }
         }
 
@@ -987,8 +989,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
     public Iterator<Blob> find(final String key, Strength strength) {
         final Comparator<Keyed> comparator = strength.comparator;
-        //final Comparator<Keyed> stopComparator = strength.prefix ? STOP_COMPARATORS.get(strength) : comparator;
-        //final Comparator<Keyed> stopComparator = comparator;
+        final Comparator<Keyed> stopComparator = strength.stopComparator;
 
         final Keyed lookupEntry = new Keyed(key);
         long t0 = System.currentTimeMillis();
@@ -997,7 +998,6 @@ public final class Slob extends AbstractList<Slob.Blob> {
             L.info(String.format("%s: done binary search for %s (strength %s) in %s",
                     getTags().get("label"), key, strength, System.currentTimeMillis() - t0));
         }
-        System.out.println("Initial index: " + strength + " -> " + initialIndex);
         Iterator<Blob> iterator = new Iterator<Blob>() {
 
             int index = initialIndex;
@@ -1010,9 +1010,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
             private void prepareNext() {
                 if (index < size()) {
                     Blob matchedEntry = get(index);
-                    System.out.println("Matched entry: " + matchedEntry.key);
-                    nextEntry = (0 == comparator.compare(matchedEntry, lookupEntry)) ? matchedEntry : null;
-                    System.out.println("Next entry: " + nextEntry);
+                    nextEntry = (0 == stopComparator.compare(matchedEntry, lookupEntry)) ? matchedEntry : null;
                     index++;
                 }
                 else {
