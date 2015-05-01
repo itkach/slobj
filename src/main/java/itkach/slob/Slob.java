@@ -994,7 +994,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
         final Keyed lookupEntry = new Keyed(key);
         long t0 = System.currentTimeMillis();
         final int initialIndex = indexOf(lookupEntry, comparator);
-        if (L.isLoggable(Level.INFO)) {
+        if (L.isLoggable(Level.FINE)) {
             L.info(String.format("%s: done binary search for %s (strength %s) in %s",
                     getTags().get("label"), key, strength, System.currentTimeMillis() - t0));
         }
@@ -1295,12 +1295,12 @@ public final class Slob extends AbstractList<Slob.Blob> {
                 Blob maybeNext = iter.next();
                 String dedupKey = mkDedupKey(maybeNext);
                 if (seen.contains(dedupKey)) {
-                    L.info("Ignoring dupe " + dedupKey);
+                    L.fine("Ignoring dupe " + dedupKey);
                     continue;
                 } else {
                     seen.add(dedupKey);
                     mergeBuffer.add(new MergeBufferItem(maybeNext, findResult.strength));
-                    L.info("Updated merge buffer (found next) in " + (System.currentTimeMillis() - t0));
+                    L.fine("Updated merge buffer (found next) in " + (System.currentTimeMillis() - t0));
                     return;
                 }
             }
@@ -1308,7 +1308,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
                 iterators.put(slob, nextResult(slob));
                 updateMergeBuffer(slob);
             }
-            L.info("Updated merge buffer in " + (System.currentTimeMillis() - t0));
+            L.fine("Updated merge buffer in " + (System.currentTimeMillis() - t0));
         }
 
         private String mkDedupKey(Blob b) {
@@ -1350,7 +1350,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
     public static PeekableIterator<Blob> find(String key, Slob[] slobs, Slob preferred, Strength upToStrength) {
         long t0 = System.currentTimeMillis();
         MatchIterator result = new MatchIterator(slobs, key, preferred, upToStrength);
-        L.info("find returned in " + (System.currentTimeMillis() - t0));
+        L.fine("find returned in " + (System.currentTimeMillis() - t0));
         return result;
     }
 
