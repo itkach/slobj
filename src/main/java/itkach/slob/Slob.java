@@ -1143,6 +1143,11 @@ public final class Slob extends AbstractList<Slob.Blob> {
         public Blob next() {
             return null;
         }
+
+        @Override
+        public void remove() {
+            throw new UnsupportedOperationException();
+        }
     };
 
 
