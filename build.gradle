@@ -9,5 +9,5 @@ repositories {
 }
 
 dependencies {
-    compile 'com.ibm.icu:icu4j:54.1.1', 'org.tukaani:xz:1.5'
+    compile 'com.ibm.icu:icu4j:52.1', 'org.tukaani:xz:1.5'
  }
