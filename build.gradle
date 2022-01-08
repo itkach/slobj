@@ -1,7 +1,7 @@
 apply plugin: 'java'
 apply plugin: 'eclipse'
 
-version = '0.8'
+version = '0.9'
 sourceCompatibility = '1.7'
 
 repositories {
@@ -9,5 +9,12 @@ repositories {
 }
 
 dependencies {
-    compile 'com.ibm.icu:icu4j:52.1', 'org.tukaani:xz:1.5'
+    testImplementation 'org.testng:testng:6.9.6'
+    compile 'com.ibm.icu:icu4j:52.1', 'org.tukaani:xz:1.9'
  }
+
+test {
+    useTestNG {
+
+    }
+}
