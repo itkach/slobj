@@ -10,7 +10,7 @@ repositories {
 
 dependencies {
     testImplementation 'org.testng:testng:6.9.6'
-    compile 'com.ibm.icu:icu4j:52.1', 'org.tukaani:xz:1.9'
+    compile 'com.ibm.icu:icu4j:68.1', 'org.tukaani:xz:1.9'
  }
 
 test {
