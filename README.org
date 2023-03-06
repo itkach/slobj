@@ -1,8 +1,8 @@
 * SlobJ
   SlobJ is a Java library to read [[https://github.com/itkach/slob][slob]] files.
 
-  To build, install [[http://www.gradle.org/][Gradle]], then run
+  To build run
 
    #+BEGIN_SRC sh
-   gradle build
+   ./gradlew build
    #+END_SRC
