@@ -1,5 +1,6 @@
-apply plugin: 'java'
-apply plugin: 'eclipse'
+plugins {
+    id 'java-library'
+}
 
 version = '0.9'
 sourceCompatibility = '1.7'
@@ -10,7 +11,8 @@ repositories {
 
 dependencies {
     testImplementation 'org.testng:testng:6.9.6'
-    compile 'com.ibm.icu:icu4j:68.1', 'org.tukaani:xz:1.9'
+    implementation 'org.tukaani:xz:1.9'
+    api 'com.ibm.icu:icu4j:68.1'
  }
 
 test {
