@@ -2,7 +2,11 @@ plugins {
     id 'java-library'
 }
 
-version = '0.9'
+def getVersionName = {
+    return "git describe --tags".execute().text.trim()
+}
+
+version = getVersionName()
 sourceCompatibility = '1.7'
 
 repositories {
