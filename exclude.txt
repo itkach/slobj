@@ -1566,7 +1566,6 @@ com/ibm/icu/impl/data/icudt68b/kde.res
 com/ibm/icu/impl/data/icudt68b/kde_TZ.res
 com/ibm/icu/impl/data/icudt68b/kea.res
 com/ibm/icu/impl/data/icudt68b/kea_CV.res
-com/ibm/icu/impl/data/icudt68b/keyTypeData.res
 com/ibm/icu/impl/data/icudt68b/khq.res
 com/ibm/icu/impl/data/icudt68b/khq_ML.res
 com/ibm/icu/impl/data/icudt68b/ki.res
@@ -3076,7 +3075,6 @@ com/ibm/icu/impl/data/icudt68b/th_TH_TRADITIONAL.res
 com/ibm/icu/impl/data/icudt68b/ti.res
 com/ibm/icu/impl/data/icudt68b/ti_ER.res
 com/ibm/icu/impl/data/icudt68b/ti_ET.res
-com/ibm/icu/impl/data/icudt68b/timezoneTypes.res
 com/ibm/icu/impl/data/icudt68b/tk.res
 com/ibm/icu/impl/data/icudt68b/tk_TM.res
 com/ibm/icu/impl/data/icudt68b/tl.res
