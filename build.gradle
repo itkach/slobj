@@ -7,9 +7,15 @@ def getVersionName = {
 }
 
 version = getVersionName()
-java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
+
+// sourceCompatibility/targetCompatibility only restrict language syntax; they
+// don't stop code from calling APIs added after the declared version, since
+// javac still links against whichever JDK is actually running it. `release`
+// uses javac's --release flag, which swaps in that version's real API
+// surface, so code that isn't actually usable on minSdkVersion 19 fails to
+// compile instead of only failing at runtime on old devices.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 8
 }
 
 repositories {
