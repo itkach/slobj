@@ -58,6 +58,9 @@ public final class Slob extends AbstractList<Slob.Blob> {
     }
 
     static {
+        // No compression: stores were written as is.
+        register("", input -> input);
+
         register("lzma2", new Compressor(){
 
             LZMA2Options lzma2 = new LZMA2Options();
@@ -247,6 +250,13 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
         TruncatedFileException(){
             super("Truncated file");
+        }
+    }
+
+    public final static class UnsupportedCompressionException extends IOException {
+
+        UnsupportedCompressionException(String compression){
+            super("Unsupported compression: " + compression);
         }
     }
 
@@ -747,11 +757,17 @@ public final class Slob extends AbstractList<Slob.Blob> {
         if (this.header.size != f.length()) {
             throw new TruncatedFileException();
         }
+        // Checked here rather than left to fail on the first content read, so
+        // a dictionary using an unsupported compression can't be opened at all.
+        Compressor compressor = COMPRESSORS.get(header.compression);
+        if (compressor == null) {
+            throw new UnsupportedCompressionException(header.compression);
+        }
         ItemListInfo refListInfo = readItemListInfo(f, this.header.refsOffset, SizeType.UINT, SizeType.ULONG);
         ItemListInfo storeListInfo = readItemListInfo(f, this.header.storeOffset, SizeType.UINT, SizeType.ULONG);
 
         this.store = new Store(
-                f, COMPRESSORS.get(header.compression),
+                f, compressor,
                 header.contentTypes,
                 storeListInfo,
                 storeCache);

@@ -59,14 +59,13 @@ public class TestSlob {
         assertEquals(2, Slob.binarySearch(list, "c", usCollator));
     }
 
-    @Test
-    public void readSlob() throws IOException {
-        String testSlobName = "test.slob";
-        ClassLoader classLoader = getClass().getClassLoader();
-        URL resource = classLoader.getResource(testSlobName);
+    private static Slob openTestSlob(String name) throws IOException {
+        URL resource = TestSlob.class.getClassLoader().getResource(name);
         RandomAccessFile f = new RandomAccessFile(resource.getFile(), "r");
-        Slob s = new Slob(f.getChannel(), testSlobName);
+        return new Slob(f.getChannel(), name);
+    }
 
+    private static void assertTestSlobContent(Slob s) throws IOException {
         assertEquals(2, s.getBlobCount());
         assertEquals(4, s.size());
 
@@ -84,5 +83,20 @@ public class TestSlob {
         Map<String, String> tags = s.getTags();
         assertEquals("xyz", tags.get("sometag"));
         assertEquals("abc", tags.get("some.other.tag"));
+    }
+
+    @Test
+    public void readSlob() throws IOException {
+        assertTestSlobContent(openTestSlob("test.slob"));
+    }
+
+    @Test
+    public void readUncompressedSlob() throws IOException {
+        assertTestSlobContent(openTestSlob("test-uncompressed.slob"));
+    }
+
+    @Test(expectedExceptions = Slob.UnsupportedCompressionException.class)
+    public void rejectUnsupportedCompression() throws IOException {
+        openTestSlob("test-bz2.slob");
     }
 }
