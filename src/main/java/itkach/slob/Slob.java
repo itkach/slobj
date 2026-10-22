@@ -875,10 +875,13 @@ public final class Slob extends AbstractList<Slob.Blob> {
         return header.blobCount;
     }
 
+    // The uri tag, or one made from the file's id if there's none. A blank
+    // uri tag counts as none: as a uri it would make every file with one the
+    // same dictionary.
     public String getURI() {
         Map<String, String> tags = getTags();
         String uri = tags.get("uri");
-        if (uri == null) {
+        if (uri == null || uri.trim().isEmpty()) {
             uri = "slob:" + getId();
         }
         return uri;
