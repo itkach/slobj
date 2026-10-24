@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.net.URL;
 import java.text.Collator;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -98,5 +100,35 @@ public class TestSlob {
     @Test(expectedExceptions = Slob.UnsupportedCompressionException.class)
     public void rejectUnsupportedCompression() throws IOException {
         openTestSlob("test-bz2.slob");
+    }
+
+    private static List<String> findContent(String key, Slob... slobs) throws IOException {
+        List<String> found = new ArrayList<>();
+        Iterator<Slob.Blob> result = Slob.find(key, slobs);
+        while (result.hasNext()) {
+            Slob.Content content = result.next().getContent();
+            byte[] bytes = new byte[content.data.remaining()];
+            content.data.get(bytes);
+            found.add(new String(bytes, "UTF-8"));
+        }
+        return found;
+    }
+
+    @Test
+    public void equalKeysFollowTheOrderOfDictionaries() throws IOException {
+        Slob one = openTestSlob("homographs-1.slob");
+        Slob two = openTestSlob("homographs-2.slob");
+        assertEquals(Arrays.asList(
+                "homographs-1.slob: river",
+                "homographs-1.slob: money",
+                "homographs-1.slob: plane",
+                "homographs-2.slob: river",
+                "homographs-2.slob: money"), findContent("bank", one, two));
+        assertEquals(Arrays.asList(
+                "homographs-2.slob: river",
+                "homographs-2.slob: money",
+                "homographs-1.slob: river",
+                "homographs-1.slob: money",
+                "homographs-1.slob: plane"), findContent("bank", two, one));
     }
 }

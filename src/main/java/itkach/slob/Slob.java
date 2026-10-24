@@ -1156,10 +1156,12 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
         final Blob           blob;
         final Strength       strength;
+        final int            slobIndex;
 
-        MergeBufferItem(Blob blob, Strength strength) {
+        MergeBufferItem(Blob blob, Strength strength, int slobIndex) {
             this.blob = blob;
             this.strength = strength;
+            this.slobIndex = slobIndex;
         }
     }
 
@@ -1201,7 +1203,9 @@ public final class Slob extends AbstractList<Slob.Blob> {
 
             if (s1 == s2) {
                 Comparator<Keyed> cmp = s1.comparator;
-                return cmp.compare(o1.blob, o2.blob);
+                int result = cmp.compare(o1.blob, o2.blob);
+                // Equal keys keep the order of the dictionaries they come from
+                return result != 0 ? result : Integer.compare(o1.slobIndex, o2.slobIndex);
             }
             return s1.level < s2.level ? 1 : -1;
         }
@@ -1217,14 +1221,16 @@ public final class Slob extends AbstractList<Slob.Blob> {
         private List<MergeBufferItem>       mergeBuffer;
         private MergeBufferItemComparator   comparator;
         private Map<Slob, FindResult>       iterators = new HashMap<>();
+        private Map<Slob, Integer>          slobIndexes = new HashMap<>();
         private String                      key;
         private final Strength              upToStrength;
 
         MatchIterator(Slob[] slobs, String key, Slob preferred, Strength upToStrength) {
             this.key = key;
             this.upToStrength = upToStrength;
-            for (Slob slob : slobs) {
-                iterators.put(slob, nextResult(slob));
+            for (int i = 0; i < slobs.length; i++) {
+                slobIndexes.put(slobs[i], i);
+                iterators.put(slobs[i], nextResult(slobs[i]));
             }
             comparator = new MergeBufferItemComparator(preferred);
             mergeBuffer = new ArrayList<MergeBufferItem>();
@@ -1294,7 +1300,7 @@ public final class Slob extends AbstractList<Slob.Blob> {
                     continue;
                 } else {
                     seen.add(dedupKey);
-                    mergeBuffer.add(new MergeBufferItem(maybeNext, findResult.strength));
+                    mergeBuffer.add(new MergeBufferItem(maybeNext, findResult.strength, slobIndexes.get(slob)));
                     L.fine("Updated merge buffer (found next) in " + (System.currentTimeMillis() - t0));
                     return;
                 }

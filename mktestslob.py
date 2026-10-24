@@ -15,3 +15,12 @@ for name, compression in (('test.slob', 'lzma2'),
               content_type=PLAIN_TEXT)
         w.tag("sometag", "xyz")
         w.tag("some.other.tag", "abc")
+
+# Two dictionaries with several articles under one key, for the order of
+# equal keys across dictionaries.
+for name, articles in (('homographs-1.slob', ('river', 'money', 'plane')),
+                       ('homographs-2.slob', ('river', 'money'))):
+    with slob.create(name) as w:
+        for meaning in articles:
+            w.add(f'{name}: {meaning}'.encode('utf-8'), 'bank',
+                  content_type=PLAIN_TEXT)
